@@ -1,0 +1,32 @@
+---
+title: "DecompPipeline"
+author: "Sarah Hatzenbuheler"
+date: "18 9 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## DecompPipeline
+
+
+```{r}
+##Install packages
+
+#install.packages(c("devtools","BiocManager","tidyverse"))
+#BiocManager::install(c("RnBeads", "RnBeads.hg19", "RnBeads.mm10", "RnBeads.hg38"), dependencies=TRUE)
+library(devtools)
+#devtools::install_github("lutsik/MeDeCom",ref="windows")
+#devtools::install_github("cran/RefFreeEWAS")
+#devtools::install_github(c("CompEpigen/DecompPipeline","CompEpigen/FactorViz"))
+library(DecompPipeline)
+
+```
+
+
+
+
+
+

@@ -122,10 +122,14 @@ Step 3: Filter out probes on Sex chromosomes
 ```
 
 # Visualisation Pre-Norm
- MDS = multidimensional scaling, visual representation of dissimilarities or distances between sets of objects
+ MDS = multidimensional scaling, visual representation of dissimilarities or distances between sets of objects4
+ 
+  - mdsPlot (Multidimensional Scaling Plot): This plot allows a visualization of the similarity of samples based on the     top 1000 most variable probes amongst all samples. Samples are colored by Sample Groups in this plot.
+  - densityPlot: The beta distributions for each sample; users may use this figure to find samples which deviate            significantly from others and which may not be of good quality (e.g. incomplete bisulfite conversion). NB: It also        serves to identify and confirm methylated or unmethylated control samples, if these were included in the study).
+  - dendrogram: The clustering plot for all samples, you may select different method to generate this plot. There is a      parameter Feature.sel="None" in champ.QC() function. While “None” means the distance between samples would be calculated     directly by all probes (your server may crash if you directly do this on a large data set), “SVD” means champ.QC()        function would use SVD method to do deconvolute on beta matrix, then select significant components based only             EstDimRMT() method from “isva” package. Then the distance between samples would be calculated based on these            components.
 
 ```{r}
-# changinf dataformat to matrix for analysis
+# changing dataformat to matrix for analysis
 met_mat <- as.matrix(as.data.frame(met2))
 
 # setting directory again (as it seems to be constantly changed -.-)
@@ -140,9 +144,10 @@ champ.QC(met_mat, clinical2$race, Feature.sel="SVD")
 Using BMIQ method
 
 ```{r}
-# normalisae using BMIQ normalisation
+# normalise using BMIQ normalisation
 met_normBMIQ <- champ.norm(beta=met_mat, resultsDir="./CHAMP_Normalization/", 
                        method="BMIQ", plotBMIQ=F, arraytype="450K", cores=4)
+met_normBMIQ <- as.matrix(as.data.frame(met_normBMIQ))
 ```
 saving / retrieving data from normalisation
 
@@ -211,20 +216,71 @@ project.pca <- prcomp(t(met_mat))
 project.pca.proportionvariances <- ((project.pca$sdev^2) / (sum(project.pca$sdev^2)))*100
 
 # Bar plot (or Scree Plot)
-barplot(project.pca.proportionvariances, cex.names=1, xlab=paste("Principal component (PC), 1-", length(project.pca$sdev)), ylab="Proportion of variation (%)", main="Scree plot", ylim=c(0,100))
+barplot(project.pca.proportionvariances, cex.names=1, xlab=paste("Principal component (PC), 1-", length(project.pca$sdev)), ylab="Proportion of variation (%)", main="Scree plot", ylim=c(0,20))
 ```
 
 
 ```{r}
+# Sex differences PCA
+# define groups to colour for
+group_sex <- NA
+group_sex[clinical2$gender  == "male"] <- 1
+group_sex[clinical2$gender  == "female"] <- 2
+
 # Biplots of the first 10 PCs
-par(cex=1.0, cex.axis=0.8, cex.main=0.8)
-pairs(project.pca$x[,1:5], col="black", main="Principal components analysis bi-plot\nPCs 1-5", pch=16)
-pairs(project.pca$x[,6:10], col="black", main="Principal components analysis bi-plot\nPCs 6-10", pch=16)
+par(cex=1.0, cex.axis=0.8, cex.main=0.8, xpd = TRUE)
+pairs(project.pca$x[,1:5], col = c("red", "cornflowerblue")[group_sex], 
+      main="Principal components analysis bi-plot\nPCs 1-5 coloured by sex (Pre-Normalisation)", pch=16)
+legend("bottomright", fill = c("red", "cornflowerblue"), legend = c("male", "female"))
+pairs(project.pca$x[,6:10], col = c("red", "cornflowerblue")[group_sex], 
+      main="Principal components analysis bi-plot\nPCs 6-10 coloured by sex(Pre-Normalisation)", pch=16)
+```
+
+```{r}
+# Tissue differences PCA
+# define groups to colour for
+group_local <- NA
+group_local[clinical2$tissue_or_organ_of_origin  == "Brain, NOS"] <- 1
+group_local[clinical2$tissue_or_organ_of_origin  == "Temporal lobe"] <- 2
+group_local[clinical2$tissue_or_organ_of_origin  == "Frontal lobe"] <- 3
+group_local[clinical2$tissue_or_organ_of_origin  == "Occipital lobe"] <- 4
+group_local[clinical2$tissue_or_organ_of_origin  == "Overlapping lesion of brain"] <- 5
+
+# Biplots of the first 10 PCs
+par(cex=1.0, cex.axis=0.8, cex.main=0.8, xpd = T)
+pairs(project.pca$x[,1:5], col = c("red", "cornflowerblue", "purple", "yellow", "black")[group_local], 
+      main="Principal components analysis bi-plot\nPCs 1-5 coloured by sample origin (Pre-Normalisation)", pch=16)
+legend(0.05, 0.02, fill = c("red", "cornflowerblue", "purple", "yellow", "black"), 
+        legend = unique(clinical2$tissue_or_organ_of_origin), ncol = 5, text.width = 0.15, cex = 0.7, x.intersp = 0.2)
+pairs(project.pca$x[,6:10], col = c("red", "cornflowerblue", "purple", "yellow", "black")[group_local], 
+      main="Principal components analysis bi-plot\nPCs 6-10 coloured by sample origin (Pre-Normalisation)", pch=16)
+```
+
+```{r}
+# Race differences PCA
+# define groups to colour for
+group_race <- NA
+group_race[clinical2$race  == "not reported"] <- 1
+group_race[clinical2$race  == "white"] <- 2
+group_race[clinical2$race  == "black or african american"] <- 3
+
+# Biplots of the first 10 PCs
+par(cex=1.0, cex.axis=0.8, cex.main=0.8, xpd = TRUE)
+pairs(project.pca$x[,1:5], col = c("red", "cornflowerblue", "black")[group_race], 
+      main="Principal components analysis bi-plot\nPCs 1-5 coloured by race (Pre-Normalisation)", pch=16)
+legend(0.05, 0.03, fill = c("red", "cornflowerblue", "black"), legend = unique(clinical2$race), 
+       ncol = 3, cex = 0.8)
+par(cex=1.0, cex.axis=0.8, cex.main=0.8, xpd = TRUE)
+pairs(project.pca$x[,6:10], col = c("red", "cornflowerblue", "black")[group_race], 
+      main="Principal components analysis bi-plot\nPCs 6-10 coloured by race(Pre-Normalisation)", pch=16)
+legend(0.05, 0.03, fill = c("red", "cornflowerblue", "black"), legend = unique(clinical2$race), 
+       ncol = 3, cex = 0.8)
+
+# repeat for age? (in levele? how?)
 ```
 
 
 ```{r}
-## --> to do: colour the previous plots in different meta data (sex, race, ...)
 # Triplots --> sort this out?
 require(scatterplot3d)
 par(mar=c(4,4,4,4), cex=1.0, cex.main=0.8, cex.axis=0.8)

@@ -1,0 +1,129 @@
+---
+title: "DNAm_preprocess_idat"
+author: "Sarah Hatzenbuheler"
+date: "8 10 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Preprocessing Methylation data from idat files
+
+# Packages
+```{r}
+library("TCGAbiolinks")
+#library("SummarizedExperiment")
+#library("IlluminaHumanMethylation450kanno.ilmn12.hg19")
+library("minfi")
+#library(PCAtools)
+#library(ChAMP)
+library(dplyr)
+library(stringr)
+library(wateRmelon)
+library(rjson)
+library(tidyr)
+
+# set wd
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
+```
+# Download from TCGA
+
+```{r}
+# set directory
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
+
+# using TCGAbiolinks package
+query_idat <- GDCquery(project = "TCGA-GBM",
+                        data.category = "Raw microarray data",
+                        platform = "Illumina Human Methylation 450",
+                        file.type = "idat",  
+                        legacy = T)
+# Data download
+GDCdownload(query_idat, method = "client", files.per.chunk = 10)
+```
+# matching idat file names to patients
+loading meta data
+```{r}
+# json metadata from GDC legacy portal
+# https://portal.gdc.cancer.gov/legacy-archive/cart?pagination=%7B%22files%22:%7B%22from%22:20,%22size%22:20,%22sort%22:%22cases.project.project_id:asc%22%7D%7D
+meta_idat <- fromJSON(file = "metadata_idat_legacy.json")
+```
+
+creating matrix of meta data with relevant information
+```{r}
+# create matrix with corresponding filename and TCGA barcode
+idat_id <- matrix(, nrow = length(meta_idat), ncol = 2)
+for (i in 1:length(meta_idat)){
+  x <- meta_idat[[i]]
+  idat_id[i,1] <- unlist(x$associated_entities[[1]][1]) 
+  idat_id[i,2] <- x$file_name
+}
+
+#add column with filename appendiy for concatenation of new filename
+idat_id <- cbind(idat_id, gsub("^.*?_","",idat_id[,2]))
+idat_id[,3] <- gsub("^.*?_","",idat_id[,3])
+# create column of new filename
+idat_id <- as.data.frame(idat_id)
+colnames(idat_id) <- c("barcode", "old_filename", "file_end")
+idat_id <- idat_id %>% unite("new_filename", c(barcode,file_end), remove = FALSE)
+```
+
+File renaming
+```{r}
+# rename files
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R/GDCdata/TCGA-GBM/idat")
+for (i in 1:dim(idat_id)[1]){
+  if (file.exists(idat_id[i, "old_filename"])) {
+    file.rename(idat_id[i, "old_filename"], idat_id[i, "new_filename"])
+  } else {
+    cat("The file does not exist")
+  }
+}
+```
+# Reading in renamed idat files
+
+```{r}
+path <- "~/Studium/Master/Systems Biology Maastricht/Thesis/R/GDCdata/TCGA-GBM/idat"
+#list.files(path)
+basenames <- gsub("_Red.idat", "", idat_id$new_filename)
+basenames <- gsub("_Grn.idat", "", basenames)
+targets <- file.path(path, basenames)
+
+# load data into RGset
+rgset <- read.metharray(unique(targets), verbose = TRUE)
+
+# save object for faster loading
+saveRDS(object = rgset, file = "RGset_idat_1.RDS", compress = FALSE)
+```
+load data back in 
+```{r}
+# idat data
+rgset <- readRDS(file = "RGset_idat_1.RDS")
+
+# clinical data from beta value files
+data.DNAm <- readRDS(file = "DNAm_data.RDS")
+clinical <- data.frame(data.DNAm@colData)
+rm(data.DNAm)                    
+```
+
+adjust pheno data 
+```{r}
+# keep only interesting columns
+keep <- c("barcode", "definition", "sample_type_id", "tissue_or_organ_of_origin", "race", "gender", "ethnicity", "age_at_index", "vital_status")
+pheno_temp <- clinical[, keep]
+pheno_temp <- rename(pheno_temp, sample_site=tissue_or_organ_of_origin, sex = gender, 
+                     age = age_at_index, tissue_definition = definition)
+# reusing sample sheet information extracted from old filenames
+sentrix_id <- str_extract(idat_id$old_filename, "[:digit:]{1,}(?=_?)")
+sentrix_position <- str_extract(idat_id$old_filename, "(?<=_)[:alnum:]{1,}(?=_?)")
+# combine the info
+pheno_temp <- pheno_temp[order(match(pheno_temp[,"barcode"],idat_id[,"barcode"])),]
+pheno_temp <- cbind(pheno_temp, sentrix_id, sentrix_position, targets, row.names = NULL)
+pheno_temp <- rename(pheno_temp, Basename = targets)
+```
+
+
+
+

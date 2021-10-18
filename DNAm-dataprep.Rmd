@@ -27,6 +27,8 @@ library(ChAMP)
 library(dplyr)
 library(stringr)
 library(wateRmelon)
+library(stats)
+library(vulcan)
 
 # set directory
 setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
@@ -68,25 +70,6 @@ saveRDS(object = data.DNAm,
 data.DNAm <- readRDS(file = "DNAm_data.RDS")
 data.DNAm_annot <- readRDS(file = "DNAm_data_table.RDS")
 ```
-
-Idat Files
-
-```{r}
-query_idat <- GDCquery(project = "TCGA-GBM",
-                        data.category = "Raw microarray data",
-                        platform = "Illumina Human Methylation 450",
-                        file.type = "idat",  
-                        legacy = T)
-# Data download
-GDCdownload(query_idat, method = "client", files.per.chunk = 10)
-data.idat <- GDCprepare(query_idat)
-
-saveRDS(object = data.idat,
-        file = "DNAm_data_idat.RDS",
-        compress = FALSE)
-```
-
-
 
 ## Preprocessing
 
@@ -166,7 +149,7 @@ met3 <- met2[keep3, ]
 
 ```{r}
 # changing dataformat to matrix for analysis
-met_mat <- as.matrix(as.data.frame(met2))
+met_mat <- as.matrix(as.data.frame(met3))
 ```
 
 # Visualtisation of data distribution before normalisation
@@ -180,6 +163,34 @@ densityPlot(met_mat, main = "Before Normalisation")
 
 # Boxplots
 boxplot(met_mat, xlab = "Patients", ylab = "beta", las = 2, main = "Before normalisation")
+```
+
+# AUC under density curve
+
+```{r}
+# calculate density matrix for each patient
+# loop for densities
+met_dens <- vector(mode = "list", length = dim(met_mat)[2])
+names(met_dens) <- colnames(met_mat)
+for (i in colnames(met_mat)){
+  met_dens[[i]] =  density(met_mat[,i])
+}
+
+# check plot
+plot(NULL, xlim=c(-0.1,1.1), ylim=c(0, 5.5), ylab="density", xlab = "beta")
+for(i in seq_along(met_dens)) {
+     lines(met_dens[[i]]) }
+
+# loop for auc
+met_auc <- matrix(, nrow = dim(met_mat)[2], ncol = 1)
+rownames(met_auc) <- colnames(met_mat)
+for (i in colnames(met_mat)){
+  met_auc[i,] =  densityauc(met_dens[[i]], c(0,1))
+}
+
+# plot
+plot(met_auc, ylim=c(0.5,1), xlab = "patients", ylab="AUC", 
+     main = "Area under density curve before normalisation")
 ```
 
 # QC visualisation for potential cofactors
@@ -219,6 +230,34 @@ densityPlot(met_normBMIQ, main = "Normalisation BMIQ")
 boxplot(met_normBMIQ, xlab = "Patients", ylab = "beta", las = 2, main = "Normalisation BMIQ")
 ```
 
+# AUC after BMIQ Normalisation
+
+```{r}
+# calculate density matrix for each patient
+# loop for densities
+met_dens_BMIQ <- vector(mode = "list", length = dim(met_normBMIQ)[2])
+names(met_dens_BMIQ) <- colnames(met_normBMIQ)
+for (i in colnames(met_normBMIQ)){
+  met_dens_BMIQ[[i]] =  density(met_normBMIQ[,i])
+}
+
+# check plot
+plot(NULL, xlim=c(-0.1,1.1), ylim=c(0, 5.5), ylab="density", xlab = "beta")
+for(i in seq_along(met_dens_BMIQ)) {
+     lines(met_dens_BMIQ[[i]]) }
+
+# loop for auc
+met_auc_BMIQ <- matrix(, nrow = dim(met_normBMIQ)[2], ncol = 1)
+rownames(met_auc_BMIQ) <- colnames(met_normBMIQ)
+for (i in colnames(met_normBMIQ)){
+  met_auc_BMIQ[i,] =  densityauc(met_dens_BMIQ[[i]], c(0,1))
+}
+
+# plot
+plot(met_auc_BMIQ, ylim=c(0.5,1), xlab = "patients", ylab="AUC", 
+     main = "Area under density curve after BMIQ normalisation")
+```
+
 Different Normalisation: Quantile
 independent of each other?
 
@@ -231,9 +270,41 @@ densityPlot(met_betaqn, main = "After Quantile Normalisation")
 # Boxplot
 boxplot(met_betaqn, xlab = "Patients", ylab = "beta", las = 2, main = "After quantile normalisation")
 ```
+# AUC after quantile Normalisation
 
+```{r}
+# calculate density matrix for each patient
+# loop for densities
+met_dens_qn <- vector(mode = "list", length = dim(met_betaqn)[2])
+names(met_dens_qn) <- colnames(met_betaqn)
+for (i in colnames(met_betaqn)){
+  met_dens_qn[[i]] =  density(met_betaqn[,i])
+}
 
+# check plot
+plot(NULL, xlim=c(-0.1,1.1), ylim=c(0, 5.5), ylab="density", xlab = "beta")
+for(i in seq_along(met_dens_qn)) {
+     lines(met_dens_qn[[i]]) }
 
+# loop for auc
+met_auc_qn <- matrix(, nrow = dim(met_betaqn)[2], ncol = 1)
+rownames(met_auc_qn) <- colnames(met_betaqn)
+for (i in colnames(met_betaqn)){
+  met_auc_qn[i,] =  densityauc(met_dens_qn[[i]], c(0,1))
+}
+
+# plot
+plot(met_auc_qn, ylim=c(0.5,1), xlab = "patients", ylab="AUC", 
+     main = "Area under density curve after quantile normalisation")
+```
+
+# Variance Filtering
+
+```{r}
+# plotting Variance per probe after both normalisations
+plot(rowVars(met_betaqn), xlab = "probes", ylab = "Variance", 
+     main = "Variance after normalisation")
+```
 
 
 

@@ -90,7 +90,10 @@ path <- "~/Studium/Master/Systems Biology Maastricht/Thesis/R/GDCdata/TCGA-GBM/i
 basenames <- gsub("_Red.idat", "", idat_id$new_filename)
 basenames <- gsub("_Grn.idat", "", basenames)
 targets <- file.path(path, basenames)
+```
 
+
+```{r}
 # load data into RGset
 rgset <- read.metharray(unique(targets), verbose = TRUE)
 
@@ -116,13 +119,139 @@ pheno_temp <- clinical[, keep]
 pheno_temp <- rename(pheno_temp, sample_site=tissue_or_organ_of_origin, sex = gender, 
                      age = age_at_index, tissue_definition = definition)
 # reusing sample sheet information extracted from old filenames
-sentrix_id <- str_extract(idat_id$old_filename, "[:digit:]{1,}(?=_?)")
-sentrix_position <- str_extract(idat_id$old_filename, "(?<=_)[:alnum:]{1,}(?=_?)")
+idat_reduced <- idat_id[!duplicated(idat_id[,"barcode"]),]
+sentrix_id <- str_extract(idat_reduced$old_filename, "[:digit:]{1,}(?=_?)")
+sentrix_position <- str_extract(idat_reduced$old_filename, "(?<=_)[:alnum:]{1,}(?=_?)")
 # combine the info
-pheno_temp <- pheno_temp[order(match(pheno_temp[,"barcode"],idat_id[,"barcode"])),]
-pheno_temp <- cbind(pheno_temp, sentrix_id, sentrix_position, targets, row.names = NULL)
-pheno_temp <- rename(pheno_temp, Basename = targets)
+pheno <- pheno_temp[order(match(pheno_temp[,"barcode"],idat_reduced[,"barcode"])),]
+pheno <- cbind(pheno, sentrix_id, sentrix_position, row.names=NULL)#targets, row.names = NULL)
+#pheno <- rename(pheno, Basename = targets)
+rownames(pheno) <- pheno$barcode
 ```
+
+```{r}
+# other way to load in data: methylumi (used by Rick & for wateRmelon)
+mset <- methylumIDAT(pdat = pheno, idatPath = "~/Studium/Master/Systems Biology Maastricht/Thesis/R/GDCdata/TCGA-GBM/idat")
+
+# save data
+saveRDS(object = mset, file = "MSet_idat.RDS", compress = FALSE)
+```
+```{r}
+# load Methylumi data back in 
+mset <- readRDS(file = "MSet_idat.RDS")
+```
+
+# Basic patient filtering
+Filtering patients with tissue type "normal" and "recurrent tumour", as well as one patient with missing clinical data
+
+```{r}
+index <- which(pheno$sample_type_id == "01" & !is.na(pheno$sex))
+rgset <- rgset[ ,index]
+mset <- mset[ ,index]
+pheno <- pheno[index, ]
+```
+
+
+### Data Visualisation QC
+
+# Step 1: Check distribution of methylated and unmethylated raw intensities
+identifying grossly atypical (failed) samples
+```{r}
+# Boxplots of methylated and unmethylated probes
+boxplot(log(methylated(mset)), las=2, cex.axis=0.8, 
+        main = "Methylated log distribution (raw)")
+boxplot(log(unmethylated(mset)), las=2, cex.axis=0.8, 
+        main = "Unmethylated log distribution (raw)")
+```
+
+Looking at median intesities of methylated and unmethylated probes to check their distribution. For blood samples, median intensities under 2000 are to be filtered. However, not sure on the procedure for tissue samples.
+```{r}
+### extract sample intensities 
+## summarise the intensities of each sample with a single value, the median 
+M.median<-apply(methylated(mset), 2, median)
+U.median<-apply(unmethylated(mset), 2, median)
+
+QCmetrics<-cbind(M.median, U.median) ## create a table to store output of QC pipeline
+
+intens.Thres<-2000 ## change this to adjust the threshold at which you filter 
+pdf("~/Studium/Master/Systems Biology Maastricht/Thesis/R/QC/Scatterplot_SampleIntensity.pdf",width = 10, height = 10)
+par(mfrow = c(1,2))
+hist(M.median, xlab = "Median M intensity")
+hist(U.median, xlab = "Median U intensity")
+par(mfrow = c(1,1))
+plot(M.median, U.median, pch = 16, xlab = "Median M intensity", ylab = "Median U intensity")
+abline(v = intens.Thres, col = "red")
+abline(h = intens.Thres, col = "red")
+dev.off()
+```
+```{r}
+# Plot for Rmd
+par(mfrow = c(1,2))
+hist(M.median, xlab = "Median M intensity")
+hist(U.median, xlab = "Median U intensity")
+```
+```{r}
+par(mfrow = c(1,1))
+plot(M.median, U.median, pch = 16, xlab = "Median M intensity", ylab = "Median U intensity")
+abline(v = intens.Thres, col = "red")
+abline(h = intens.Thres, col = "red")
+```
+
+```{r}
+# plot median intensity per plate to highlight technical variances
+par(mfrow = c(1,2))
+par(mar = c(8, 4, 1, 1))
+nCol<-length(unique(pheno$sentrix_id))
+boxplot(M.median ~ pheno$sentrix_id, ylab = "Median M intensity", xlab = "Plate", 
+        las = 2, col = rainbow(nCol)) 
+boxplot(U.median ~ pheno$sentrix_id, ylab = "Median U intensity", xlab = "Plate", 
+        las = 2, col = rainbow(nCol))
+```
+
+
+```{r}
+# Scatter plot coloured by plate
+plot(M.median, U.median, pch = 16, xlab = "Median M intensity", ylab = "Median U intensity", 
+     col = rainbow(nCol)[factor(pheno$sentrix_id)])
+abline(v = intens.Thres, col = "red")
+abline(h = intens.Thres, col = "red") 
+legend("top", legend = levels(factor(pheno$sentrix_id)), col = rainbow(nCol), 
+       pch = 16, ncol=7, cex = 0.5)
+```
+# Step 2: Checking Bisulfite conversion rate
+Apparently, every assay includes fully methylted control probes, which can be used for QC. As they are fully methylated these should have DNA methylation values of ~1. The bisulfite conversion score is essentially the median of these probes, and value < 80 is taken as a failure.
+Recommendation is to remove samples with <80 BS conversion.
+
+```{r}
+bs<-bscon(mset)
+
+pdf("~/Studium/Master/Systems Biology Maastricht/Thesis/R/QC/HistBisulphiteConversion.pdf",width = 10, height = 10)
+hist(bs, xlab = "Median % BS conversion", main = "")
+abline(v = 80, col = "red")
+dev.off()
+```
+```{r}
+QCmetrics<-cbind(QCmetrics, bs)
+
+# Plot for Rmd
+hist(bs, xlab = "Median % BS conversion", main = "")
+abline(v = 80, col = "red")
+```
+
+# Check for outlier with outlyx (wateRmelon)
+The outlyx function takes any beta matrix (preferably raw) and
+will identify any samples that are inconsistent with the rest of the data, from
+the plot we can observe that any data points that fall into the red squares
+are indeed outlying and should be removed from analysis.
+Outlier identification based on interquartile range (2 iq) as well as PCA (based on PC1 by default). Returns a dataframe of TRUE/FALSE per sample where TRUE is outlying.
+
+```{r}
+outlier_check <- outlyx(mset)
+
+# looking at samples "to be removed based on previous QC plots
+qc_bad <- which(QCmetrics$bs < 80 | QCmetrics$M.median < 1500 | QCmetrics$U.median < 1500)
+```
+
 
 
 

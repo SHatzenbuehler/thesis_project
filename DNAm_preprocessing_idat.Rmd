@@ -24,9 +24,6 @@ library(stringr)
 library(wateRmelon)
 library(rjson)
 library(tidyr)
-
-# set wd
-setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
 ```
 # Download from TCGA
 
@@ -46,6 +43,9 @@ GDCdownload(query_idat, method = "client", files.per.chunk = 10)
 # matching idat file names to patients
 loading meta data
 ```{r}
+# set wd
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
+
 # json metadata from GDC legacy portal
 # https://portal.gdc.cancer.gov/legacy-archive/cart?pagination=%7B%22files%22:%7B%22from%22:20,%22size%22:20,%22sort%22:%22cases.project.project_id:asc%22%7D%7D
 meta_idat <- fromJSON(file = "metadata_idat_legacy.json")
@@ -92,7 +92,6 @@ basenames <- gsub("_Grn.idat", "", basenames)
 targets <- file.path(path, basenames)
 ```
 
-
 ```{r}
 # load data into RGset
 rgset <- read.metharray(unique(targets), verbose = TRUE)
@@ -100,10 +99,10 @@ rgset <- read.metharray(unique(targets), verbose = TRUE)
 # save object for faster loading
 saveRDS(object = rgset, file = "RGset_idat_1.RDS", compress = FALSE)
 ```
-load data back in 
+load data back in, including clinical data previously established
 ```{r}
 # idat data
-rgset <- readRDS(file = "RGset_idat_1.RDS")
+#rgset <- readRDS(file = "RGset_idat_1.RDS")
 
 # clinical data from beta value files
 data.DNAm <- readRDS(file = "DNAm_data.RDS")
@@ -129,6 +128,7 @@ pheno <- cbind(pheno, sentrix_id, sentrix_position, row.names=NULL)#targets, row
 rownames(pheno) <- pheno$barcode
 ```
 
+Loading in MethyLumi object --> easier to work with
 ```{r}
 # other way to load in data: methylumi (used by Rick & for wateRmelon)
 mset <- methylumIDAT(pdat = pheno, idatPath = "~/Studium/Master/Systems Biology Maastricht/Thesis/R/GDCdata/TCGA-GBM/idat")
@@ -146,7 +146,7 @@ Filtering patients with tissue type "normal" and "recurrent tumour", as well as 
 
 ```{r}
 index <- which(pheno$sample_type_id == "01" & !is.na(pheno$sex))
-rgset <- rgset[ ,index]
+#rgset <- rgset[ ,index]
 mset <- mset[ ,index]
 pheno <- pheno[index, ]
 ```
@@ -223,14 +223,17 @@ Apparently, every assay includes fully methylted control probes, which can be us
 Recommendation is to remove samples with <80 BS conversion.
 
 ```{r}
+# bisulfite conversion using wateRmelom
 bs<-bscon(mset)
 
+# plotting and saving histogram of % of BS conversion 
 pdf("~/Studium/Master/Systems Biology Maastricht/Thesis/R/QC/HistBisulphiteConversion.pdf",width = 10, height = 10)
 hist(bs, xlab = "Median % BS conversion", main = "")
 abline(v = 80, col = "red")
 dev.off()
 ```
 ```{r}
+# Saving QC metrics
 QCmetrics<-cbind(QCmetrics, bs)
 
 # Plot for Rmd
@@ -249,7 +252,122 @@ Outlier identification based on interquartile range (2 iq) as well as PCA (based
 outlier_check <- outlyx(mset)
 
 # looking at samples "to be removed based on previous QC plots
+QCmetrics <- as.data.frame(QCmetrics)
 qc_bad <- which(QCmetrics$bs < 80 | QCmetrics$M.median < 1500 | QCmetrics$U.median < 1500)
+```
+
+check raw beta distribution
+```{r}
+# Density plots
+densityPlot(betas(mset), main="Density plot of raw beta values")
+
+# check density plots based on potential confounders
+#densityPlot(beta_mat, sampGroups = pheno$sex, main = "Density plot of raw data") # nothing
+#densityPlot(beta_mat, sampGroups = pheno$sentrix_id, main = "Density plot of raw data") #nothing
+densityPlot(beta_mat, sampGroups = pheno$race, main = "Density plot of raw data", legend = F)
+legend("top", legend = c("black or african american", "not reported", "white"), 
+       text.col = c("dark green", "red", "purple"))
+densityPlot(beta_mat, sampGroups = pheno$sample_site, main = "Density plot of raw data")
+```
+
+Check AUC to compare with other data
+```{r}
+# calculate density matrix for each patient
+beta_mat <- betas(mset)
+# need to filter our NA first
+probe.na <- rowSums(is.na(beta_mat))
+table(probe.na == 0)
+# chose those has not NA values in rows
+probe <- probe.na[probe.na == 0]
+beta_mat <- beta_mat[row.names(beta_mat) %in% names(probe), ]
+any(is.na(beta_mat))
+
+# check vale range, should be between 0 and 1 - it is
+range(beta_mat)
+
+library(vulcan)
+# loop for densities
+met_dens_raw <- vector(mode = "list", length = dim(beta_mat)[2])
+names(met_dens_raw) <- colnames(beta_mat)
+for (i in colnames(beta_mat)){
+  met_dens_raw[[i]] =  density(beta_mat[,i])
+}
+
+# check plot
+plot(NULL, xlim=c(-0.1,1.1), ylim=c(0, 5.5), ylab="density", xlab = "beta")
+for(i in seq_along(met_dens_raw)) {
+     lines(met_dens_raw[[i]]) }
+
+# loop for auc
+met_auc_raw <- matrix(, nrow = dim(beta_mat)[2], ncol = 1)
+rownames(met_auc_raw) <- colnames(beta_mat)
+for (i in colnames(beta_mat)){
+  met_auc_raw[i,] =  densityauc(met_dens_raw[[i]], c(0,1))
+}
+
+# plot
+plot(met_auc_raw, ylim=c(0.5,1), xlab = "patients", ylab="AUC", 
+     main = "Area under density curve for raw data")
+```
+
+check MDA plots to see data distribution
+Multidimesional scaling, checks the 1000 most variable positions and relates samples. Distance not to be taken absolute.
+Potentially should be normalised first (scaling, compare PCA)
+
+```{r}
+# mds plot from minfi
+mdsPlot(beta_mat, numPositions = 1000, sampGroups = pheno$sex, pch = 16, legendPos = "topright")
+mdsPlot(beta_mat, numPositions = 1000, sampGroups = pheno$race, pch = 16, legendPos = "topright")
+```
+
+# Step 3: Check for genetically identical samples based on SNP probes
+
+```{r}
+# match order of samples with pheno info
+pheno<-pheno[match(colnames(beta_mat), pheno$barcode),]
+
+# select only SNP probes, staring with rs
+betas.rs<-beta_mat[grep("rs", rownames(beta_mat)),]
+# correlate beta values of SNP probes between samples
+snpCor<-cor(betas.rs) # Pearson as standard (assumption of linearity, parametric)
+names(snpCor)<-pheno$barcode
+# set diagonal of the matrix to NA, as it would be 1 for selfcorrelation 
+#(needed for maxcor, otherwise it'll always find itself)
+diag(snpCor)=NA 
+corMax<-apply(abs(snpCor), 1, max, na.rm = TRUE)
+
+# Histogram of correlation frequency over all samples
+hist(corMax, main = "Max. SNP correlation with all other samples", 
+     xlab = "Maximum correlation (Pearson)")
+```
+For each sample, plot beta values per SNP probe against same value for most correlated probe.
+
+```{r}
+# Check for and identify genetically identical matches
+duplicateSamples<-vector(length = ncol(snpCor))
+#if(max(corMax) > 0.95){
+pdf("~/Studium/Master/Systems Biology Maastricht/Thesis/R/QC/DuplicateSamples.pdf", 
+    width = 15, height = 8)
+par(mfrow = c(2,4))
+for(i in 1:ncol(snpCor)){
+    if(!TRUE%in%(snpCor[,i] == max(snpCor[,i],na.rm = T))){next} # @RRR added if no max is found for some reason
+    duplicateSamples[i]<-paste(names(which(snpCor[,i] == max(snpCor[,i],na.rm = T))), 
+                               sep = "|", collapse = "|")
+    plot(betas.rs[,i], betas.rs[, names(which(snpCor[,i] == max(snpCor[,i],na.rm = T)))], 
+         xlab = paste0(colnames(betas.rs)[i]," Cor:", 
+                  round(max(snpCor[,i],na.rm = T),4)), 
+         ylab = paste0(colnames(betas.rs)[which(snpCor[,i] == max(snpCor[,i],na.rm = T))])
+    )
+}
+dev.off()
+
+# save potential duplicates
+QCmetrics<-cbind(QCmetrics, duplicateSamples)
+```
+```{r}
+# Heatmap of correlation values
+gplots::heatmap.2(abs(snpCor), trace = "none", labCol = pheno$barcode, 
+                  dendrogram = "column", labRow = "", key = FALSE, scale = "none")
 ```
 
 

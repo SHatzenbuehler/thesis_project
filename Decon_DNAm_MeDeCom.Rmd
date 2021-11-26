@@ -1,0 +1,89 @@
+---
+title: "Deconvolution Methylation data - MeDeCom"
+author: "Sarah Hatzenbuheler"
+date: "26 11 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Packages
+
+```{r}
+library(devtools)
+devtools::install_github("lutsik/MeDeCom",ref="windows")
+library(MeDeCom)
+```
+
+# Example data set and how to proceed
+
+```{r}
+#load in example data
+data(example.dataset, package="MeDeCom")
+```
+ # Running Deconvolution
+ 
+Before running the deconvolution, it is important to think about a number of parameters.
+Ks : number range of cell types included in the mix
+lambdas : range of regularisation parameter, with 0 there being no regularisation. Lambda basically restricts any possible beta values to be between 0 and 1, thus confirming closer to biology.
+NINIT : number of random initialisations
+NFOLDS : number of crossvalisation folds
+NCORES: number of CPU cores the decon is running on
+(for example numbers check the vignette: https://github.com/lutsik/MeDeCom/blob/master/vignettes/MeDeCom.md)
+
+According to Weronicka's thesis: NINIt = 30-50
+
+```{r}
+# Running medecom decon
+medecom.result<-runMeDeCom(D, Ks = 2:5, lambdas = c(0,10^(-2:-1)), 
+                           NINIT = 2, NFOLDS = 2, ITERMAX=300, NCORES=5)
+```
+
+# Plot results
+
+```{r}
+# visaulisa CV error for different lambda
+plotParameters(medecom.result)
+```
+T oselect optimal lambda for different k, a different visualisation can be employed:
+```{r}
+# line plot for set k
+plotParameters(medecom.result, K=5, lambdaScale="log")
+```
+# Extractiong Latent Methylation components
+
+```{r}
+# extract LMCs for set lambda and K
+lmcs<-getLMCs(medecom.result, K=5, lambda=0.01)
+str(lmcs)
+```
+
+# Visualisation of LMCs
+```{r}
+# dendrogram
+plotLMCs(medecom.result, K=5, lambda=0.01, type="dendrogram")
+
+# MDS plot with data included
+plotLMCs(medecom.result, K=5, lambda=0.01, type="MDS", D = D)
+```
+# matching LMCs to reference profiles
+```{r}
+# dendrogram
+plotLMCs(medecom.result, K=5, lambda=0.01, type="dendrogram", Tref=Tref, center=TRUE)
+
+# heatmap
+plotLMCs(medecom.result, K=5, lambda=0.01, type="heatmap", Tref=Tref)
+```
+
+# Get mixing proportions matrix for RNAseq analysis
+
+```{r}
+# get matrix of mixing proportions
+prop<-getProportions(medecom.result, K=5, lambda=0.01)
+str(prop)
+```
+
+
+

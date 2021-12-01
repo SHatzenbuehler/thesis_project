@@ -18,7 +18,6 @@ library("TCGAbiolinks")
 #library("IlluminaHumanMethylation450kanno.ilmn12.hg19")
 library("minfi")
 #library(PCAtools)
-#library(ChAMP)
 library(dplyr)
 library(stringr)
 library(wateRmelon)
@@ -413,7 +412,7 @@ pheno_2 <- pheno_1[qc_good, ]
 QCmetrics2 <- QCmetrics1[qc_good, ]
 
 # remove previous variables for storage space
-rm(mset_1) 
+rm(mset_1, mset) 
 gc()
 ```
 
@@ -422,8 +421,9 @@ gc()
 mset_2.pf <- pfilter(mset_2)
 pFilterPass<-colnames(betas(mset_2)) %in% colnames(betas(mset_2.pf))
 QCmetrics2<-cbind(QCmetrics2, pFilterPass)
+
+# remove unneeded files 
 rm("mset_2.pf")
-rm("pFilterPass")
 gc()
 ```
 # age test
@@ -569,24 +569,43 @@ pairs(project.pca$x[,6:10], col = rainbow(nCol)[group_sentrix],
 ```
 
 ## 2.5 Removal of SNPs & Sex chromosome CpGs
-To correct for the effect of sex on the data, as well as individual differences, in the next step probes encoding fro regions on the X or Y chromosome as well as porbes covering known SNP regions will be removed. 
+To correct for the effect of sex on the data, as well as individual differences, in the next step probes encoding for regions on the X or Y chromosome as well as porbes covering known SNP regions will be removed. 
+
+HOWEVER we seem to need an RGChannel obejct or anything minfi can deal with, therefore we need to redo certain steps above with rgset. Great.
+(Actually I am an idiot and I dont even need to filter for patients, as for the next step only the cg probes are important. Oh well, I'll leave it for now, cant hurt)
+
+# Interlude - getting rgset up to current status
+```{r}
+# load in data
+rgset <- readRDS(file = "RGset_idat_1.RDS")
+
+# Filter based on patient info and NA
+rgset_11 <- rgset[ ,index] # filtering out tissue type and sex == NA
+rgset_1 <- rgset_11[ ,index1] # filtering out anything but caucasians
+rgset_2 <- rgset_1[ ,qc_good] # filtering based on BS  conversion
+
+# remove not needed data
+rm(rgset_11, rgset_1, rgset) 
+gc()
+```
+Next step, annotation is imported to first remove all probes on the X and Y chromosome. Then, all probes with known SNPs that have a minor allele frequency of under 5% are removed as well.
 
 ```{r}
 ### currently not working
 # get the 450k annotation data
 library("IlluminaHumanMethylation450kanno.ilmn12.hg19")
-ann450k <- getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+ann450k <- getAnnotation(rgset_2)
 
 ## remove probes with NA
 probe.na <- rowSums(is.na(beta_mat))
 table(probe.na == 0)
 probe <- probe.na[probe.na == 0] # chose those has not NA values in rows
-beta_mat <- beta_mat[row.names(beta_mat) %in% names(probe), ]
+beta_mat_11 <- beta_mat[row.names(beta_mat) %in% names(probe), ]
 
 ## remove probes that match to chromosome  X and Y 
-keep <- !(row.names(beta_mat) %in% ann450k$Name[ann450k$chr %in% c("chrX","chrY")])
+keep <- !(row.names(beta_mat_11) %in% ann450k$Name[ann450k$chr %in% c("chrX","chrY")])
 table(keep)
-beta_mat <- beta_mat[keep, ]
+beta_mat_1 <- beta_mat_11[keep, ]
 
 ## remove SNPs overlapped probe
 table (is.na(ann450k$Probe_rs))
@@ -594,15 +613,86 @@ table (is.na(ann450k$Probe_rs))
 no.snp.probe <- ann450k$Name[is.na(ann450k$Probe_rs)]
 snp.probe <- ann450k[!is.na(ann450k$Probe_rs), ]
 
-#SNPs with maf <= 0.05
+# SNPs with maf <= 0.05
 snp5.probe <- snp.probe$Name[snp.probe$Probe_maf <= 0.05]
 # filter both RS probes as well as probes with minor allele frequency of <= 0.05
-beta_mat <- beta_mat[row.names(beta_mat) %in% c(no.snp.probe, snp5.probe), ]
+beta_mat_2 <- beta_mat_1[row.names(beta_mat_1) %in% c(no.snp.probe, snp5.probe), ]
 
 #remove no-further needed datasets
-rm(no.snp.probe, probe, probe.na, snp.probe, snp5.probe, keep)
+rm(beta_mat, beta_mat_11, beta_mat_1)
+gc()
 ```
 
+## 2.6 PCA again 
+
+To check how well removing the X and Y probes helped to unbias the data, another round of PCAs will be performed.
+
+```{r}
+# Create PCA project
+project.pca2 <- prcomp(t(beta_mat_2))
+project.pca.proportionvariances2 <- ((project.pca2$sdev^2) /
+                                      (sum(project.pca2$sdev^2)))*100
+
+# Bar plot (or Scree Plot)
+barplot(project.pca.proportionvariances2, cex.names=1, 
+        xlab=paste("Principal component (PC), 1-",length(project.pca2$sdev)), 
+        ylab="Proportion of variation (%)", 
+        main="Scree plot after SNP and XY filtering", ylim=c(0,30))
+```
+
+Next, PCs are again visualised against each other and confounders are checked.
+```{r}
+# Sex differences PCA
+# define groups to colour for
+group_sex <- NA
+group_sex[pheno_2$sex  == "male"] <- 1
+group_sex[pheno_2$sex  == "female"] <- 2
+
+# Biplots of the first 10 PCs
+par(cex=1.0, cex.axis=0.8, cex.main=0.8, xpd = TRUE)
+pairs(project.pca2$x[,1:5], col = c("red", "cornflowerblue")[group_sex], 
+      main="Principal components analysis bi-plot\nPCs 1-5 coloured by sex\n after chr filtering", pch=16)
+legend("bottomright", fill = c("red", "cornflowerblue"), legend = c("male", "female"))
+pairs(project.pca2$x[,6:10], col = c("red", "cornflowerblue")[group_sex], 
+      main="Principal components analysis bi-plot\nPCs 6-10 coloured by sex\n after chr filtering", pch=16)
+```
+
+Again we also check if the plates are still visible
+```{r}
+# Plate differences PCA
+# define groups to colour for
+group_sentrix <- NA
+no <- 1
+nCol<-length(unique(pheno$sentrix_id))
+
+for (i in unique(pheno_2$sentrix_id)){
+  group_sentrix[pheno_2$sentrix_id  == i] <- no
+  no <- no +1
+}
+
+# Biplots of the first 10 PCs
+par(cex=1.0, cex.axis=0.8, cex.main=0.8, xpd = T)
+pairs(project.pca2$x[,1:5], col = rainbow(nCol)[group_sentrix], 
+      main="Principal components analysis bi-plot\nPCs 1-5 coloured by Plate", pch=16)
+legend(0.05, 0.02, fill = rainbow(nCol),legend = unique(pheno_2$sentrix_id), 
+       ncol = 5, text.width = 0.15, cex = 0.7, x.intersp = 0.2)
+pairs(project.pca2$x[,6:10], col = rainbow(nCol)[group_sentrix], 
+      main="Principal components analysis bi-plot\nPCs 6-10 coloured by Plate", pch=16)
+```
+
+## 2.7 CpG filtering based on variance and associated genes
+
+```{r}
+## transform UCSC gene names to gene ID list
+library(AnnotationDbi)
+library(org.Mm.eg.db)
+
+#x <- ann450k$UCSC_RefGene_Name
+#rownames(x) <- rownames(ann450k) # add rownames to vector, then this stuff is not necessary
+
+geneSymbols <- select(org.Mm.eg.db, columns = "SYMBOL",  keytype = "REFSEQ")
+
+```
 
 
 

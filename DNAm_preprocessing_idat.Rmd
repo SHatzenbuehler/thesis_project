@@ -495,7 +495,7 @@ for (i in colnames(beta_mat)){
 
 # plot
 plot(beta_auc, ylim=c(0.5,1), xlab = "patients", ylab="AUC", 
-     main = "Area under density curve for raw data")
+     main = "Area under density curve for norm data")
 ```
 
 
@@ -594,7 +594,7 @@ Next step, annotation is imported to first remove all probes on the X and Y chro
 ### currently not working
 # get the 450k annotation data
 library("IlluminaHumanMethylation450kanno.ilmn12.hg19")
-ann450k <- getAnnotation(rgset_2)
+ann450k <- minfi::getAnnotation(rgset_2)
 
 ## remove probes with NA
 probe.na <- rowSums(is.na(beta_mat))
@@ -637,7 +637,7 @@ project.pca.proportionvariances2 <- ((project.pca2$sdev^2) /
 barplot(project.pca.proportionvariances2, cex.names=1, 
         xlab=paste("Principal component (PC), 1-",length(project.pca2$sdev)), 
         ylab="Proportion of variation (%)", 
-        main="Scree plot after SNP and XY filtering", ylim=c(0,30))
+        main="Scree plot after SNP and XY filtering", ylim=c(0,15))
 ```
 
 Next, PCs are again visualised against each other and confounders are checked.
@@ -651,10 +651,10 @@ group_sex[pheno_2$sex  == "female"] <- 2
 # Biplots of the first 10 PCs
 par(cex=1.0, cex.axis=0.8, cex.main=0.8, xpd = TRUE)
 pairs(project.pca2$x[,1:5], col = c("red", "cornflowerblue")[group_sex], 
-      main="Principal components analysis bi-plot\nPCs 1-5 coloured by sex\n after chr filtering", pch=16)
+      main="Principal components analysis bi-plot\nPCs 1-5 coloured by sex after chr filtering", pch=16)
 legend("bottomright", fill = c("red", "cornflowerblue"), legend = c("male", "female"))
 pairs(project.pca2$x[,6:10], col = c("red", "cornflowerblue")[group_sex], 
-      main="Principal components analysis bi-plot\nPCs 6-10 coloured by sex\n after chr filtering", pch=16)
+      main="Principal components analysis bi-plot\nPCs 6-10 coloured by sex after chr filtering", pch=16)
 ```
 
 Again we also check if the plates are still visible
@@ -673,12 +673,24 @@ for (i in unique(pheno_2$sentrix_id)){
 # Biplots of the first 10 PCs
 par(cex=1.0, cex.axis=0.8, cex.main=0.8, xpd = T)
 pairs(project.pca2$x[,1:5], col = rainbow(nCol)[group_sentrix], 
-      main="Principal components analysis bi-plot\nPCs 1-5 coloured by Plate", pch=16)
+      main="Principal components analysis bi-plot\nPCs 1-5 coloured by Plate after chr filtering",
+      pch=16)
 legend(0.05, 0.02, fill = rainbow(nCol),legend = unique(pheno_2$sentrix_id), 
        ncol = 5, text.width = 0.15, cex = 0.7, x.intersp = 0.2)
 pairs(project.pca2$x[,6:10], col = rainbow(nCol)[group_sentrix], 
-      main="Principal components analysis bi-plot\nPCs 6-10 coloured by Plate", pch=16)
+      main="Principal components analysis bi-plot\nPCs 6-10 coloured by Plate after chr filtering", 
+      pch=16)
 ```
+
+need to normalise again?
+```{r}
+# asign new filtered beta_met2 to mset_3
+
+
+# normalise again
+mset_norm2 <- dasen(mset_3)
+```
+
 
 ## 2.7 CpG filtering based on variance and associated genes
 
@@ -694,6 +706,14 @@ geneSymbols <- select(org.Mm.eg.db, columns = "SYMBOL",  keytype = "REFSEQ")
 
 ```
 
+```{r}
+# variance
+var_probes <- rowVars(beta_norm)
+
+# plotting Variance per probe after normalisation 2
+plot(var_probes, xlab = "probes", ylab = "Variance", 
+     main = "Variance after normalisation")
+```
 
 
 

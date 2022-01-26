@@ -15,7 +15,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 library("TCGAbiolinks")
 #library("SummarizedExperiment")
-#library("IlluminaHumanMethylation450kanno.ilmn12.hg19")
+library("IlluminaHumanMethylation450kanno.ilmn12.hg19")
 library("minfi")
 #library(PCAtools)
 library(dplyr)
@@ -23,6 +23,9 @@ library(stringr)
 library(wateRmelon)
 library(rjson)
 library(tidyr)
+library(vulcan)
+library(FDb.InfiniumMethylation.hg19)
+library(PCAtools)
 ```
 # Download from TCGA
 
@@ -469,7 +472,7 @@ densityPlot(betas(mset_norm), main="Density plot of normalised beta values")
 ```
 # AUC for density curve
 ```{r}
-library(vulcan)
+#library(vulcan)
 
 # matrix of beta values
 beta_mat <- betas(mset_norm)
@@ -505,7 +508,7 @@ plot(beta_auc, ylim=c(0.5,1), xlab = "patients", ylab="AUC",
 To visualise potential confounders and biggest sources of variance in the data, we perform principal component analyses.
 First, PCs are calculated and their respective percentage of variance explained is visualised in a Scree plot.
 ```{r}
-library(PCAtools)
+#library(PCAtools)
 
 # matrix of beta values
 beta_mat <- betas(mset_norm)
@@ -593,7 +596,7 @@ Next step, annotation is imported to first remove all probes on the X and Y chro
 ```{r}
 ### currently not working
 # get the 450k annotation data
-library("IlluminaHumanMethylation450kanno.ilmn12.hg19")
+#library("IlluminaHumanMethylation450kanno.ilmn12.hg19")
 ann450k <- minfi::getAnnotation(rgset_2)
 
 ## remove probes with NA
@@ -618,18 +621,44 @@ snp5.probe <- snp.probe$Name[snp.probe$Probe_maf <= 0.05]
 # filter both RS probes as well as probes with minor allele frequency of <= 0.05
 beta_mat_2 <- beta_mat_1[row.names(beta_mat_1) %in% c(no.snp.probe, snp5.probe), ]
 
+# Remove SNP probes starting with ch. (Not sre if I should do this?)
+#keep3 <- !str_detect(rownames(beta_mat_2), regex("ch.", dotall = TRUE))
+#beta_mat_3 <- beta_mat_2[keep3, ]
+
 #remove no-further needed datasets
 rm(beta_mat, beta_mat_11, beta_mat_1)
 gc()
 ```
 
-## 2.6 PCA again 
+```{r}
+# Remove CpGs from MethyLumi object to be able to normalise it again
+RemoveCpG = rownames(mset_2)%in%rownames(beta_mat_2)
+mset_3 = mset_2[RemoveCpG,]
+```
+## Renormalisation
+
+After probe filtering, renormalise all values
+```{r}
+# Normalise using dasen from wateRmelon
+mset_renorm <- dasen(mset_3)
+
+# save data
+saveRDS(object = mset_renorm, file = "MSet_renorm.RDS", compress = FALSE)
+```
+```{r}
+# load normalised data back in
+mset_renorm <- readRDS(file = "MSet_renorm.RDS")
+```
+
+
+## 2.7 PCA again 
 
 To check how well removing the X and Y probes helped to unbias the data, another round of PCAs will be performed.
 
 ```{r}
 # Create PCA project
-project.pca2 <- prcomp(t(beta_mat_2))
+beta_renorm <- betas(mset_renorm)
+project.pca2 <- prcomp(t(beta_renorm))
 project.pca.proportionvariances2 <- ((project.pca2$sdev^2) /
                                       (sum(project.pca2$sdev^2)))*100
 
@@ -682,17 +711,7 @@ pairs(project.pca2$x[,6:10], col = rainbow(nCol)[group_sentrix],
       pch=16)
 ```
 
-need to normalise again?
-```{r}
-# asign new filtered beta_met2 to mset_3
-
-
-# normalise again
-mset_norm2 <- dasen(mset_3)
-```
-
-
-## 2.7 CpG filtering based on variance and associated genes
+## 2.8 CpG filtering based on variance and associated genes
 
 ```{r}
 ## transform UCSC gene names to gene ID list

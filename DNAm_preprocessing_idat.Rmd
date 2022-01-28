@@ -17,7 +17,7 @@ library("TCGAbiolinks")
 #library("SummarizedExperiment")
 library("IlluminaHumanMethylation450kanno.ilmn12.hg19")
 library("minfi")
-#library(PCAtools)
+library(PCAtools)
 library(dplyr)
 library(stringr)
 library(wateRmelon)
@@ -25,7 +25,6 @@ library(rjson)
 library(tidyr)
 library(vulcan)
 library(FDb.InfiniumMethylation.hg19)
-library(PCAtools)
 ```
 # Download from TCGA
 
@@ -267,7 +266,7 @@ legend("top", legend = c("black or african american", "not reported", "white"),
 densityPlot(betas(mset), sampGroups = pheno$sample_site, main = "Density plot of raw data")
 ```
 
-# Cross check with already preprocessed beta vlaues provided for same data
+# Cross check with already preprocessed beta values provided for same data
 Check AUC to compare with other data since the density curves looked very different. It seems AUC paints a similar picture. 
 ```{r}
 # calculate density matrix for each patient
@@ -373,7 +372,7 @@ gplots::heatmap.2(abs(snpCor), trace = "none", labCol = pheno$barcode,
 ```
 
 
-### 2) Filtering & Data adjustment based on QC assesment so far
+### 2) Filtering & Data adjustment based on QC assessment so far
 
 
 ## 2.1 Basic patient filtering
@@ -634,6 +633,9 @@ gc()
 # Remove CpGs from MethyLumi object to be able to normalise it again
 RemoveCpG = rownames(mset_2)%in%rownames(beta_mat_2)
 mset_3 = mset_2[RemoveCpG,]
+
+rm(mset_2, beta_mat_2)
+gc()
 ```
 ## Renormalisation
 
@@ -713,27 +715,94 @@ pairs(project.pca2$x[,6:10], col = rainbow(nCol)[group_sentrix],
 
 ## 2.8 CpG filtering based on variance and associated genes
 
+
 ```{r}
-## transform UCSC gene names to gene ID list
-library(AnnotationDbi)
-library(org.Mm.eg.db)
+# load in gene lists from Weronicka's project
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
+gene_list_v1 <- read.csv("V1_markers.csv", header = F)
+gene_list_v2 <- read.csv("V2_markers.csv", header = F)
+gene_list_v3 <- read.csv("V3_markers.csv", header = F)
 
-#x <- ann450k$UCSC_RefGene_Name
-#rownames(x) <- rownames(ann450k) # add rownames to vector, then this stuff is not necessary
+# create matrix of probes names and associated gene symbols from annotation file
+probe_genes <- as.data.frame(cbind(rownames(ann450k), ann450k$UCSC_RefGene_Name))
+colnames(probe_genes)<- c("probeID", "geneID")
 
-geneSymbols <- select(org.Mm.eg.db, columns = "SYMBOL",  keytype = "REFSEQ")
+# find probes with matching gene coverage
+# for list V1
+pattern_v1 <- paste(";", gene_list_v1$V1, ";", sep="", collapse = "|")
+x <- paste(";", probe_genes$geneID, ";", sep="")
+probesID_v1 <- grep(pattern = pattern_v1, x = x)
 
+# For list V3
+pattern_v3 <- paste(";", gene_list_v3$V1, ";", sep="", collapse = "|")
+probesID_v3 <- grep(pattern = pattern_v3, x = x)
+
+# For list V2 - very long gene list, so need to split it in 8 parts for memory purposes
+pattern_v2_1 <- paste(";", gene_list_v2$V1[1:2000], ";", sep="", collapse = "|")
+probesID_v2_1 <- grep(pattern = pattern_v2_1, x = x)
+
+pattern_v2_2 <- paste(";", gene_list_v2$V1[2001:4000], ";", sep="", collapse = "|")
+probesID_v2_2 <- grep(pattern = pattern_v2_2, x = x)
+
+pattern_v2_3 <- paste(";", gene_list_v2$V1[4001:6000], ";", sep="", collapse = "|")
+probesID_v2_3 <- grep(pattern = pattern_v2_3, x = x)
+
+pattern_v2_4 <- paste(";", gene_list_v2$V1[6001:8000], ";", sep="", collapse = "|")
+probesID_v2_4 <- grep(pattern = pattern_v2_4, x = x)
+
+pattern_v2_5 <- paste(";", gene_list_v2$V1[8001:10000], ";", sep="", collapse = "|")
+probesID_v2_5 <- grep(pattern = pattern_v2_5, x = x)
+
+pattern_v2_6 <- paste(";", gene_list_v2$V1[10001:12000], ";", sep="", collapse = "|")
+probesID_v2_6 <- grep(pattern = pattern_v2_6, x = x)
+
+pattern_v2_7 <- paste(";", gene_list_v2$V1[12001:14000], ";", sep="", collapse = "|")
+probesID_v2_7 <- grep(pattern = pattern_v2_7, x = x)
+
+pattern_v2_8 <- paste(";", gene_list_v2$V1[14001:length(gene_list_v2$V1)], ";", 
+                      sep="", collapse = "|")
+probesID_v2_8 <- grep(pattern = pattern_v2_8, x = x)
+# combine partial lists into one, filtering out double entries and sorting in ascending order
+probesID_v2 <- sort(unique(c(probesID_v2_1, probesID_v2_2, probesID_v2_3, probesID_v2_4,
+                             probesID_v2_5, probesID_v2_6, probesID_v2_7, probesID_v2_8)))
+
+# match probe IDs with probe names and corresponding genes
+probe_genes_v1 <- probe_genes[probesID_v1,]
+probe_genes_v2 <- probe_genes[probesID_v2,]
+probe_genes_v3 <- probe_genes[probesID_v3,]
+
+# save lists
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(probe_genes_v1, "probe_genes_v1.csv", row.names = F, sep = ";")
+write.table(probe_genes_v2, "probe_genes_v2.csv", row.names = F, sep = ";")
+write.table(probe_genes_v3, "probe_genes_v3.csv", row.names = F, sep = ";")
 ```
+
+```{r}
+# load lists back in for faster processing
+probe_genes_v1 <- as.data.frame(read.csv("probe_genes_v1.csv", header = T, sep = ";"))
+probe_genes_v2 <- as.data.frame(read.csv("probe_genes_v2.csv", header = T, sep = ";"))
+probe_genes_v3 <- as.data.frame(read.csv("probe_genes_v3.csv", header = T, sep = ";"))
+
+# combine probes lists from all three gene lists
+rel_probes <- unique(c(probe_genes_v1$probeID, probe_genes_v2$probeID, probe_genes_v3$probeID))
+```
+
 
 ```{r}
 # variance
-var_probes <- rowVars(beta_norm)
+var_probes <- as.data.frame(rowVars(beta_renorm))
+rownames(var_probes) <- rownames(beta_renorm)
+colnames(var_probes) <- "variance"
 
-# plotting Variance per probe after normalisation 2
-plot(var_probes, xlab = "probes", ylab = "Variance", 
+# plotting Variance per probe after renormalisation
+plot(var_probes$variance, xlab = "probes", ylab = "Variance", 
      main = "Variance after normalisation")
 ```
 
+```{r}
+
+```
 
 
 

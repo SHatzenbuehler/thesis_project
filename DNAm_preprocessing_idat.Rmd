@@ -801,7 +801,29 @@ plot(var_probes$variance, xlab = "probes", ylab = "Variance",
 ```
 
 ```{r}
+# select only probes referring to relevant genes
+var_probes[, "colour"] <- "black"
+var_probes[probe_genes_v1$probeID, "colour"] <- "red"
 
+# plot variance with V1 genes coloured
+plot(var_probes$variance, xlab = "probes", ylab = "Variance", col = var_probes$colour,
+     main = "Variance coloured for relevant genes V1")
+
+# select only probes referring to relevant genes
+var_probes[, "colour"] <- "black"
+var_probes[probe_genes_v2$probeID, "colour"] <- "blue"
+
+# plot variance with V1 genes coloured
+plot(var_probes$variance, xlab = "probes", ylab = "Variance", col = var_probes$colour,
+     main = "Variance coloured for relevant genes V2")
+
+# select only probes referring to relevant genes
+var_probes[, "colour"] <- "black"
+var_probes[probe_genes_v3$probeID, "colour"] <- "green"
+
+# plot variance with V1 genes coloured
+plot(var_probes$variance, xlab = "probes", ylab = "Variance", col = var_probes$colour,
+     main = "Variance coloured for relevant genes V3")
 ```
 
 

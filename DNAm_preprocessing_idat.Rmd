@@ -826,5 +826,17 @@ plot(var_probes$variance, xlab = "probes", ylab = "Variance", col = var_probes$c
      main = "Variance coloured for relevant genes V3")
 ```
 
+```{r}
+# filtering all probes that have variance over cutoff AND are in either of the gene lists
+var_probes[rel_probes, "colour"] <- "white"
+filt_index <- which(var_probes$variance >=0.06 & var_probes$colour == "white")
+
+# determine list of probes to keep for NMF
+filt_probes <- rownames(var_probes[filt_index,])
+beta_final <- beta_renorm[filt_probes, ]
+
+# save beta matrix for further analysis
+write.table(beta_final, "beta_preprocessed.txt", sep="\t",row.names=T, colnames = T)
+```
 
 

@@ -783,9 +783,6 @@ write.table(probe_genes_v3, "probe_genes_v3.csv", row.names = F, sep = ";")
 probe_genes_v1 <- as.data.frame(read.csv("probe_genes_v1.csv", header = T, sep = ";"))
 probe_genes_v2 <- as.data.frame(read.csv("probe_genes_v2.csv", header = T, sep = ";"))
 probe_genes_v3 <- as.data.frame(read.csv("probe_genes_v3.csv", header = T, sep = ";"))
-
-# combine probes lists from all three gene lists
-rel_probes <- unique(c(probe_genes_v1$probeID, probe_genes_v2$probeID, probe_genes_v3$probeID))
 ```
 
 
@@ -801,6 +798,9 @@ plot(var_probes$variance, xlab = "probes", ylab = "Variance",
 ```
 
 ```{r}
+# combine probes lists from all three gene lists
+rel_probes <- unique(c(probe_genes_v1$probeID, probe_genes_v2$probeID, probe_genes_v3$probeID))
+
 # select only probes referring to relevant genes
 var_probes[, "colour"] <- "black"
 var_probes[probe_genes_v1$probeID, "colour"] <- "red"
@@ -826,6 +826,37 @@ plot(var_probes$variance, xlab = "probes", ylab = "Variance", col = var_probes$c
      main = "Variance coloured for relevant genes V3")
 ```
 
+Instead of using variance as data spread measure, we can also logarithmically transform the data and filter for standard deviation (see Weronicka's thesis) 
+```{r}
+# remove rows containing NA from table
+var_probes <- na.omit(var_probes)
+
+# log-transform data
+beta_log <- log(beta_renorm)
+
+# take var and std from data
+var_probes[, "log_var"] <- rowVars(beta_log)
+var_probes[, "log_std"] <- rowSds(beta_log)
+```
+
+
+```{r}
+# plot both
+plot(var_probes$log_var, xlab = "probes", ylab = "Variance", 
+     main = "Variance of log transformed data")
+plot(var_probes$log_std, xlab = "probes", ylab = "Standard deviation", 
+     main = "Standard deviation of log transformed data")
+
+# with previously established relevant genes included
+var_probes[, "colour"] <- "black"
+var_probes[rel_probes, "colour"] <- "violet"
+plot(var_probes$log_var, xlab = "probes", ylab = "Variance", col = var_probes$colour,
+      main = "Log Variance coloured for relevant genes")
+plot(var_probes$log_std, xlab = "probes", ylab = "Standard deviation", col = var_probes$colour,
+      main = "Log Standard deviation coloured for relevant genes")
+```
+
+
 ```{r}
 # filtering all probes that have variance over cutoff AND are in either of the gene lists
 var_probes[rel_probes, "colour"] <- "white"
@@ -834,7 +865,10 @@ filt_index <- which(var_probes$variance >=0.06 & var_probes$colour == "white")
 # determine list of probes to keep for NMF
 filt_probes <- rownames(var_probes[filt_index,])
 beta_final <- beta_renorm[filt_probes, ]
+```
 
+##3.0) Saving preprocessed Beta-Matrix for further analysis
+```{r}
 # save beta matrix for further analysis
 write.table(beta_final, "beta_preprocessed.txt", sep="\t",row.names=T, colnames = T)
 ```

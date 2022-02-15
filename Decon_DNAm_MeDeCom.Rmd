@@ -13,7 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 library(devtools)
-devtools::install_github("lutsik/MeDeCom",ref="windows")
+#devtools::install_github("lutsik/MeDeCom",ref="windows")
 library(MeDeCom)
 ```
 
@@ -23,6 +23,12 @@ library(MeDeCom)
 #load in example data
 data(example.dataset, package="MeDeCom")
 ```
+```{r}
+# load beta matrix from preprocessed data
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+beta_mat <- as.matrix(read.table(file = "beta_preprocessed_teo.txt"))
+```
+
  # Running Deconvolution
  
 Before running the deconvolution, it is important to think about a number of parameters.
@@ -37,8 +43,11 @@ According to Weronicka's thesis: NINIt = 30-50
 
 ```{r}
 # Running medecom decon
-medecom.result<-runMeDeCom(D, Ks = 2:5, lambdas = c(0,10^(-2:-1)), 
-                           NINIT = 2, NFOLDS = 2, ITERMAX=300, NCORES=5)
+#medecom.result<-runMeDeCom(D, Ks = 2:5, lambdas = c(0,10^(-2:-1)), 
+#                           NINIT = 2, NFOLDS = 2, ITERMAX=300, NCORES=5)
+
+medecom.result<-runMeDeCom(beta_mat, 2:10, c(0,10^(-5:-1)), NINIT=10, 
+                           NFOLDS=10, ITERMAX=300, NCORES=5)
 ```
 
 # Plot results
@@ -47,26 +56,26 @@ medecom.result<-runMeDeCom(D, Ks = 2:5, lambdas = c(0,10^(-2:-1)),
 # visaulisa CV error for different lambda
 plotParameters(medecom.result)
 ```
-T oselect optimal lambda for different k, a different visualisation can be employed:
+To select optimal lambda for different k, a different visualisation can be employed:
 ```{r}
 # line plot for set k
-plotParameters(medecom.result, K=5, lambdaScale="log")
+plotParameters(medecom.result, K=4, lambdaScale="log")
 ```
 # Extractiong Latent Methylation components
 
 ```{r}
 # extract LMCs for set lambda and K
-lmcs<-getLMCs(medecom.result, K=5, lambda=0.01)
+lmcs<-getLMCs(medecom.result, K=4, lambda=0.01)
 str(lmcs)
 ```
 
 # Visualisation of LMCs
 ```{r}
 # dendrogram
-plotLMCs(medecom.result, K=5, lambda=0.01, type="dendrogram")
+plotLMCs(medecom.result, K=4, lambda=0.01, type="dendrogram")
 
 # MDS plot with data included
-plotLMCs(medecom.result, K=5, lambda=0.01, type="MDS", D = D)
+plotLMCs(medecom.result, K=4, lambda=0.01, type="MDS", D = beta_mat)
 ```
 # matching LMCs to reference profiles
 ```{r}
@@ -81,9 +90,25 @@ plotLMCs(medecom.result, K=5, lambda=0.01, type="heatmap", Tref=Tref)
 
 ```{r}
 # get matrix of mixing proportions
-prop<-getProportions(medecom.result, K=5, lambda=0.01)
+prop<-getProportions(medecom.result, K=4, lambda=0.01)
 str(prop)
 ```
 
+```{r}
+#create stacked bar plots of proportions
+
+prop<-getProportions(medecom.result, K=4, lambda=0.01)
+
+# create color palette:
+library(RColorBrewer)
+coul <- brewer.pal(4, "Set1") 
+ 
+# Transform this data in %
+data_percentage <- apply(prop, 2, function(x){x*100/sum(x,na.rm=T)})
+ 
+# Make a stacked barplot--> it will be in %!
+barplot(data_percentage, col=coul , border="white", xlab="samples", ylab = "cell type %",
+        main="cell type proportion for FS based on variance & Weronicka's gene list")
+```
 
 

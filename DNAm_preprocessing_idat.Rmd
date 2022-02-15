@@ -282,7 +282,7 @@ any(is.na(beta_mat))
 # check vale range, should be between 0 and 1 - it is
 range(beta_mat)
 
-library(vulcan)
+#library(vulcan)
 # loop for densities
 met_dens_raw <- vector(mode = "list", length = dim(beta_mat)[2])
 names(met_dens_raw) <- colnames(beta_mat)
@@ -414,20 +414,21 @@ pheno_2 <- pheno_1[qc_good, ]
 QCmetrics2 <- QCmetrics1[qc_good, ]
 
 # remove previous variables for storage space
-rm(mset_1, mset) 
+rm(mset_1, mset, QCmetrics1, QCmetrics11) 
 gc()
 ```
 
 # pfilter based on probes detection
 ```{r}
-mset_2.pf <- pfilter(mset_2)
-pFilterPass<-colnames(betas(mset_2)) %in% colnames(betas(mset_2.pf))
-QCmetrics2<-cbind(QCmetrics2, pFilterPass)
+# run pfilter on data
+mset_2 <- pfilter(mset_2)
 
-# remove unneeded files 
-rm("mset_2.pf")
-gc()
+# check which samples pass pfilter
+pFilterPass<-colnames(betas(mset_2)) %in% colnames(betas(mset_2.pf))
+QCmetrics2[, 'pFilterPass'] <- pFilterPass
+isTRUE(sum(QCmetrics2$pFilterPass) == dim(QCmetrics2)[1])
 ```
+
 # age test
 
 ```{r}
@@ -597,6 +598,7 @@ Next step, annotation is imported to first remove all probes on the X and Y chro
 # get the 450k annotation data
 #library("IlluminaHumanMethylation450kanno.ilmn12.hg19")
 ann450k <- minfi::getAnnotation(rgset_2)
+beta_mat <- betas(mset_norm)
 
 ## remove probes with NA
 probe.na <- rowSums(is.na(beta_mat))
@@ -621,8 +623,8 @@ snp5.probe <- snp.probe$Name[snp.probe$Probe_maf <= 0.05]
 beta_mat_2 <- beta_mat_1[row.names(beta_mat_1) %in% c(no.snp.probe, snp5.probe), ]
 
 # Remove SNP probes starting with ch. (Not sre if I should do this?)
-#keep3 <- !str_detect(rownames(beta_mat_2), regex("ch.", dotall = TRUE))
-#beta_mat_3 <- beta_mat_2[keep3, ]
+keep3 <- !str_detect(rownames(beta_mat_2), regex("ch.", dotall = TRUE))
+beta_mat_3 <- beta_mat_2[keep3, ]
 
 #remove no-further needed datasets
 rm(beta_mat, beta_mat_11, beta_mat_1)
@@ -631,10 +633,10 @@ gc()
 
 ```{r}
 # Remove CpGs from MethyLumi object to be able to normalise it again
-RemoveCpG = rownames(mset_2)%in%rownames(beta_mat_2)
+RemoveCpG = rownames(mset_2)%in%rownames(beta_mat_3)
 mset_3 = mset_2[RemoveCpG,]
 
-rm(mset_2, beta_mat_2)
+rm(mset_2, beta_mat_2, beta_mat_3, rgset_2)
 gc()
 ```
 ## Renormalisation
@@ -785,6 +787,33 @@ probe_genes_v2 <- as.data.frame(read.csv("probe_genes_v2.csv", header = T, sep =
 probe_genes_v3 <- as.data.frame(read.csv("probe_genes_v3.csv", header = T, sep = ";"))
 ```
 
+```{r}
+# Do the same with Top500 classifier gene list from Teo et al. 2019
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
+gene_list_teo <- read.csv("Teo2019_genelist500.csv", header = F)
+
+# create matrix of probes names and associated gene symbols from annotation file
+probe_genes <- as.data.frame(cbind(rownames(ann450k), ann450k$UCSC_RefGene_Name))
+colnames(probe_genes)<- c("probeID", "geneID")
+
+# find probes with matching gene coverage
+pattern_teo <- paste(";", gene_list_teo$V1, ";", sep="", collapse = "|")
+x <- paste(";", probe_genes$geneID, ";", sep="")
+probesID_teo <- grep(pattern = pattern_teo, x = x)
+
+# match probe IDs with probe names and corresponding genes
+probe_genes_teo <- probe_genes[probesID_teo,]
+
+# save lists
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(probe_genes_teo, "probe_genes_teo.csv", row.names = F, sep = ";")
+```
+
+```{r}
+# load in for faster processing
+probe_genes_teo <- as.data.frame(read.csv("probe_genes_teo.csv", header = T, sep = ";"))
+```
+
 
 ```{r}
 # variance
@@ -825,6 +854,17 @@ var_probes[probe_genes_v3$probeID, "colour"] <- "green"
 plot(var_probes$variance, xlab = "probes", ylab = "Variance", col = var_probes$colour,
      main = "Variance coloured for relevant genes V3")
 ```
+Also compare to Gene list by Teo et al 2019
+```{r}
+# select only probes referring to relevant genes
+var_probes[, "colour"] <- "black"
+var_probes[probe_genes_teo$probeID, "colour"] <- "red"
+
+# plot variance with V1 genes coloured
+plot(var_probes$variance, xlab = "probes", ylab = "Variance", col = var_probes$colour,
+     main = "Variance coloured for relevant genes after Teo et al. 2019")
+```
+
 
 Instead of using variance as data spread measure, we can also logarithmically transform the data and filter for standard deviation (see Weronicka's thesis) 
 ```{r}
@@ -849,7 +889,7 @@ plot(var_probes$log_std, xlab = "probes", ylab = "Standard deviation",
 
 # with previously established relevant genes included
 var_probes[, "colour"] <- "black"
-var_probes[rel_probes, "colour"] <- "violet"
+var_probes[rel_probes, "colour"] <- "purple"
 plot(var_probes$log_var, xlab = "probes", ylab = "Variance", col = var_probes$colour,
       main = "Log Variance coloured for relevant genes")
 plot(var_probes$log_std, xlab = "probes", ylab = "Standard deviation", col = var_probes$colour,
@@ -860,17 +900,33 @@ plot(var_probes$log_std, xlab = "probes", ylab = "Standard deviation", col = var
 ```{r}
 # filtering all probes that have variance over cutoff AND are in either of the gene lists
 var_probes[rel_probes, "colour"] <- "white"
-filt_index <- which(var_probes$variance >=0.06 & var_probes$colour == "white")
+filt_index <- which(var_probes$variance >=0.04) # & var_probes$colour == "white")
 
 # determine list of probes to keep for NMF
 filt_probes <- rownames(var_probes[filt_index,])
 beta_final <- beta_renorm[filt_probes, ]
 ```
 
+```{r}
+# Alternatively, filter for gene on list by Teo et al. 2019
+filt_index <- which(probe_genes_teo$probeID %in% rownames(beta_renorm)) 
+
+# determine list of probes to keep for NMF
+filt_probes <- rownames(var_probes[filt_index,])
+beta_final_teo <- beta_renorm[filt_probes, ]
+
+# save beta matrix for further analysis
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(beta_final_teo, "beta_preprocessed_teo.txt", sep="\t",row.names=T)
+```
+
+
 ##3.0) Saving preprocessed Beta-Matrix for further analysis
 ```{r}
 # save beta matrix for further analysis
-write.table(beta_final, "beta_preprocessed.txt", sep="\t",row.names=T, colnames = T)
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(beta_final, "beta_preprocessed_var.txt", sep="\t",row.names=T)
 ```
+
 
 

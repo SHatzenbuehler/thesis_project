@@ -422,7 +422,8 @@ gc()
 ```{r}
 # run pfilter on data
 mset_2 <- pfilter(mset_2)
-
+```
+```{r}
 # check which samples pass pfilter
 pFilterPass<-colnames(betas(mset_2)) %in% colnames(betas(mset_2.pf))
 QCmetrics2[, 'pFilterPass'] <- pFilterPass
@@ -623,8 +624,8 @@ snp5.probe <- snp.probe$Name[snp.probe$Probe_maf <= 0.05]
 beta_mat_2 <- beta_mat_1[row.names(beta_mat_1) %in% c(no.snp.probe, snp5.probe), ]
 
 # Remove SNP probes starting with ch. (Not sre if I should do this?)
-keep3 <- !str_detect(rownames(beta_mat_2), regex("ch.", dotall = TRUE))
-beta_mat_3 <- beta_mat_2[keep3, ]
+#keep3 <- !str_detect(rownames(beta_mat_2), regex("ch.", dotall = TRUE))
+#beta_mat_3 <- beta_mat_2[keep3, ]
 
 #remove no-further needed datasets
 rm(beta_mat, beta_mat_11, beta_mat_1)
@@ -633,10 +634,10 @@ gc()
 
 ```{r}
 # Remove CpGs from MethyLumi object to be able to normalise it again
-RemoveCpG = rownames(mset_2)%in%rownames(beta_mat_3)
+RemoveCpG = rownames(mset_2)%in%rownames(beta_mat_2)
 mset_3 = mset_2[RemoveCpG,]
 
-rm(mset_2, beta_mat_2, beta_mat_3, rgset_2)
+rm(mset_2, beta_mat_2, rgset_2)
 gc()
 ```
 ## Renormalisation
@@ -899,6 +900,7 @@ plot(var_probes$log_std, xlab = "probes", ylab = "Standard deviation", col = var
 
 ```{r}
 # filtering all probes that have variance over cutoff AND are in either of the gene lists
+var_probes[, "colour"] <- "black"
 var_probes[rel_probes, "colour"] <- "white"
 filt_index <- which(var_probes$variance >=0.04) # & var_probes$colour == "white")
 
@@ -906,6 +908,32 @@ filt_index <- which(var_probes$variance >=0.04) # & var_probes$colour == "white"
 filt_probes <- rownames(var_probes[filt_index,])
 beta_final <- beta_renorm[filt_probes, ]
 ```
+
+```{r}
+# save table with probes & associated genes when filtered for variance
+var_index <- which(ann450k$Name %in% filt_probes)
+var_genes <- as.data.frame(filt_probes)
+var_genes[, "genes"] <- ann450k$UCSC_RefGene_Name[var_index]
+
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(var_genes, "probe_genes_var.csv", row.names = F, sep = ";")
+```
+```{r}
+# copied only the names of associated genes into single csv file
+# seperating gene names and only keeping unique ones
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+list_unedit <- read.csv("var_genes_unedit.csv", header = F)
+list_unique <- unique(list_unedit)
+
+# split gene names after ";", append them all into one big list
+list_detached <- strsplit(x = unlist(list_unique), split = "[;]")
+list_full <- data.frame(matrix(unlist(list_detached), ncol=1, byrow=TRUE))
+# again filter for only unique gene names
+list_unique_final <- unique(list_full)
+
+write.csv(list_unique_final, "var_genes_unique.csv", row.names = F)
+```
+
 
 ```{r}
 # Alternatively, filter for gene on list by Teo et al. 2019

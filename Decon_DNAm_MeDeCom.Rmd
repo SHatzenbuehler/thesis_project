@@ -43,9 +43,6 @@ According to Weronicka's thesis: NINIt = 30-50
 
 ```{r}
 # Running medecom decon
-#medecom.result<-runMeDeCom(D, Ks = 2:5, lambdas = c(0,10^(-2:-1)), 
-#                           NINIT = 2, NFOLDS = 2, ITERMAX=300, NCORES=5)
-
 medecom.result<-runMeDeCom(beta_mat, 2:10, c(0,10^(-5:-1)), NINIT=10, 
                            NFOLDS=10, ITERMAX=300, NCORES=5)
 ```
@@ -77,22 +74,7 @@ plotLMCs(medecom.result, K=4, lambda=0.01, type="dendrogram")
 # MDS plot with data included
 plotLMCs(medecom.result, K=4, lambda=0.01, type="MDS", D = beta_mat)
 ```
-# matching LMCs to reference profiles
-```{r}
-# dendrogram
-plotLMCs(medecom.result, K=5, lambda=0.01, type="dendrogram", Tref=Tref, center=TRUE)
 
-# heatmap
-plotLMCs(medecom.result, K=5, lambda=0.01, type="heatmap", Tref=Tref)
-```
-
-# Get mixing proportions matrix for RNAseq analysis
-
-```{r}
-# get matrix of mixing proportions
-prop<-getProportions(medecom.result, K=4, lambda=0.01)
-str(prop)
-```
 
 ```{r}
 #create stacked bar plots of proportions
@@ -111,4 +93,33 @@ barplot(data_percentage, col=coul , border="white", xlab="samples", ylab = "cell
         main="cell type proportion for FS based on variance & Weronicka's gene list")
 ```
 
+Check how many of the genes are overlapping in each gene list
+```{r}
+# set directory
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
+
+# read in gene lists
+genes_teo2019 <- unlist(read.csv(file = "Teo2019_genelist500.csv", header = F))
+genes_wang2017 <- unlist(read.csv(file = "Wang2017_genelist_subtypes.csv", header = F))
+genes_neftel2019 <- unlist(read.csv(file = "Neftel2019_genelist_subtypes.csv", header = F))
+genes_var <- unlist(read.csv(file = "var_genes_unique.csv", header = F))
+
+# make Venn dagram of gene overlap
+library(VennDiagram)
+
+VennDiagram::get.venn.partitions(list(genes_neftel2019 = genes_neftel2019, 
+                                      genes_teo2019 = genes_teo2019, 
+                                      genes_var = genes_var, 
+                                      genes_wang2017 = genes_wang2017))
+```
+
+```{r}
+# print Venn diagramm
+grid.newpage()
+grid::grid.draw(VennDiagram::venn.diagram(list("Neftel 2019 (363)"= genes_neftel2019, 
+                                               "Teo 2019 (500)" = genes_teo2019, 
+                                               "Variance filtered (3170)" = genes_var, 
+                                               "Wang 2017 (150)" = genes_wang2017),
+                                          NULL))
+```
 

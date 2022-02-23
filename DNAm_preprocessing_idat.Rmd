@@ -718,7 +718,10 @@ pairs(project.pca2$x[,6:10], col = rainbow(nCol)[group_sentrix],
 
 ## 2.8 CpG filtering based on variance and associated genes
 
+# Prepare data for Filtering based on biologically relevant genes
+First off, we asscoiate the CpG probes to genes on several lists according to literature or previous experiments
 
+1) Linking genes to CpG probes for Weronika's Gene lists
 ```{r}
 # load in gene lists from Weronicka's project
 setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
@@ -788,6 +791,7 @@ probe_genes_v2 <- as.data.frame(read.csv("probe_genes_v2.csv", header = T, sep =
 probe_genes_v3 <- as.data.frame(read.csv("probe_genes_v3.csv", header = T, sep = ";"))
 ```
 
+2) Linking genes to CpG lists for Teo et al. (2019)
 ```{r}
 # Do the same with Top500 classifier gene list from Teo et al. 2019
 setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
@@ -815,6 +819,63 @@ write.table(probe_genes_teo, "probe_genes_teo.csv", row.names = F, sep = ";")
 probe_genes_teo <- as.data.frame(read.csv("probe_genes_teo.csv", header = T, sep = ";"))
 ```
 
+3) Linking genes and probes for Neftel et al. (2019)
+```{r}
+# Link Neftel gene list to probes
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
+gene_list_neftel <- read.csv("Neftel2019_genelist_subtypes.csv", header = F)
+
+# create matrix of probes names and associated gene symbols from annotation file
+probe_genes <- as.data.frame(cbind(rownames(ann450k), ann450k$UCSC_RefGene_Name))
+colnames(probe_genes)<- c("probeID", "geneID")
+
+# find probes with matching gene coverage
+pattern_neftel <- paste(";", gene_list_neftel$V1, ";", sep="", collapse = "|")
+x <- paste(";", probe_genes$geneID, ";", sep="")
+probesID_neftel <- grep(pattern = pattern_neftel, x = x)
+
+# match probe IDs with probe names and corresponding genes
+probe_genes_neftel <- probe_genes[probesID_neftel,]
+
+# save lists
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(probe_genes_neftel, "probe_genes_neftel.csv", row.names = F, sep = ";")
+```
+
+```{r}
+# load in for faster processing
+probe_genes_neftel <- as.data.frame(read.csv("probe_genes_neftel.csv", header = T, sep = ";"))
+```
+
+4) Linking genes to probes for Wang et al. 2017
+```{r}
+# Link Neftel gene list to probes
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
+gene_list_wang <- read.csv("Wang2017_genelist_subtypes.csv", header = F)
+
+# create matrix of probes names and associated gene symbols from annotation file
+probe_genes <- as.data.frame(cbind(rownames(ann450k), ann450k$UCSC_RefGene_Name))
+colnames(probe_genes)<- c("probeID", "geneID")
+
+# find probes with matching gene coverage
+pattern_wang <- paste(";", gene_list_wang$V1, ";", sep="", collapse = "|")
+x <- paste(";", probe_genes$geneID, ";", sep="")
+probesID_wang <- grep(pattern = pattern_wang, x = x)
+
+# match probe IDs with probe names and corresponding genes
+probe_genes_wang <- probe_genes[probesID_wang,]
+
+# save lists
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(probe_genes_wang, "probe_genes_wang.csv", row.names = F, sep = ";")
+```
+
+```{r}
+# load in for faster processing
+probe_genes_wang <- as.data.frame(read.csv("probe_genes_wang.csv", header = T, sep = ";"))
+```
+
+# Prepare data for variance filtering
 
 ```{r}
 # variance
@@ -897,7 +958,9 @@ plot(var_probes$log_std, xlab = "probes", ylab = "Standard deviation", col = var
       main = "Log Standard deviation coloured for relevant genes")
 ```
 
+# Actually filter data based on preferred criteria & saving for further analysis
 
+1) Variance filtering (potentially including relevant genes)
 ```{r}
 # filtering all probes that have variance over cutoff AND are in either of the gene lists
 var_probes[, "colour"] <- "black"
@@ -934,18 +997,19 @@ list_unique_final <- unique(list_full)
 write.csv(list_unique_final, "var_genes_unique.csv", row.names = F)
 ```
 
-
+2) Filtering based on gene list
 ```{r}
-# Alternatively, filter for gene on list by Teo et al. 2019
-filt_index <- which(probe_genes_teo$probeID %in% rownames(beta_renorm)) 
+# Alternatively, filter for gene lists
+# change name of gene list as approrpiate (_teo, _nefte, _wang)
+filt_index <- which(probe_genes_wang$probeID %in% rownames(beta_renorm)) 
 
 # determine list of probes to keep for NMF
-filt_probes <- rownames(var_probes[filt_index,])
-beta_final_teo <- beta_renorm[filt_probes, ]
+#filt_probes <- rownames(var_probes[filt_index,])
+beta_final_wang <- beta_renorm[filt_index, ]
 
 # save beta matrix for further analysis
 setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
-write.table(beta_final_teo, "beta_preprocessed_teo.txt", sep="\t",row.names=T)
+write.table(beta_final_wang, "beta_preprocessed_wang.txt", sep="\t",row.names=T)
 ```
 
 

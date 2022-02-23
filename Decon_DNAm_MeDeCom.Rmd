@@ -15,6 +15,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(devtools)
 #devtools::install_github("lutsik/MeDeCom",ref="windows")
 library(MeDeCom)
+library(ggplot2)
 ```
 
 # Example data set and how to proceed
@@ -25,8 +26,9 @@ data(example.dataset, package="MeDeCom")
 ```
 ```{r}
 # load beta matrix from preprocessed data
+# for preprocessed data based on biologically relevant gene lsit: _teo, _wang, _neftel
 setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
-beta_mat <- as.matrix(read.table(file = "beta_preprocessed_teo.txt"))
+beta_mat <- as.matrix(read.table(file = "beta_preprocessed_neftel.txt"))
 ```
 
  # Running Deconvolution
@@ -45,18 +47,48 @@ According to Weronicka's thesis: NINIt = 30-50
 # Running medecom decon
 medecom.result<-runMeDeCom(beta_mat, 2:10, c(0,10^(-5:-1)), NINIT=10, 
                            NFOLDS=10, ITERMAX=300, NCORES=5)
+
+# save result
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+saveRDS(object = medecom.result, file = "Medecom_result_neftel.RDS", compress = FALSE)
 ```
 
-# Plot results
+### Result analysis
+
+## Loading in all results
+```{r}
+# Reload results after saving
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
+medecom.result.teo <- readRDS("Medecom_result_teo.RDS")
+medecom.result.var <- readRDS("Medecom_result_var.RDS")
+medecom.result.wang <- readRDS("Medecom_result_wang.RDS")
+medecom.result.neftel <- readRDS("Medecom_result_neftel.RDS")
+
+# also reload the beta matrices for MDS plot later
+beta_mat.teo <- as.matrix(read.table(file = "beta_preprocessed_teo.txt"))
+beta_mat.var <- as.matrix(read.table(file = "beta_preprocessed_var.txt"))
+beta_mat.wang <- as.matrix(read.table(file = "beta_preprocessed_wang.txt"))
+beta_mat.neftel <- as.matrix(read.table(file = "beta_preprocessed_neftel.txt"))
+```
+
+## Visualisation 
+
+# Error measures for different lambda settings
 
 ```{r}
-# visaulisa CV error for different lambda
-plotParameters(medecom.result)
+# visualise CV error for different lambda
+plotParameters(medecom.result.teo)
+plotParameters(medecom.result.var)
+plotParameters(medecom.result.wang)
+plotParameters(medecom.result.neftel)
 ```
 To select optimal lambda for different k, a different visualisation can be employed:
 ```{r}
 # line plot for set k
-plotParameters(medecom.result, K=4, lambdaScale="log")
+plotParameters(medecom.result.teo, K=4, lambdaScale="log")
+plotParameters(medecom.result.var, K=4, lambdaScale="log")
+plotParameters(medecom.result.wang, K=4, lambdaScale="log")
+plotParameters(medecom.result.neftel, K=4, lambdaScale="log")
 ```
 # Extractiong Latent Methylation components
 
@@ -69,29 +101,122 @@ str(lmcs)
 # Visualisation of LMCs
 ```{r}
 # dendrogram
-plotLMCs(medecom.result, K=4, lambda=0.01, type="dendrogram")
+plotLMCs(medecom.result.teo, K=4, lambda=0.01, type="dendrogram")
+plotLMCs(medecom.result.var, K=4, lambda=0.01, type="dendrogram")
+plotLMCs(medecom.result.wang, K=4, lambda=0.01, type="dendrogram")
+plotLMCs(medecom.result.neftel, K=4, lambda=0.01, type="dendrogram")
+```
 
+```{r}
 # MDS plot with data included
-plotLMCs(medecom.result, K=4, lambda=0.01, type="MDS", D = beta_mat)
+plotLMCs(medecom.result.teo, K=4, lambda=0.01, type="MDS", D = beta_mat.teo)
+plotLMCs(medecom.result.var, K=4, lambda=0.01, type="MDS", D = beta_mat.var)
+plotLMCs(medecom.result.wang, K=4, lambda=0.01, type="MDS", D = beta_mat.wang)
+plotLMCs(medecom.result.neftel, K=4, lambda=0.01, type="MDS", D = beta_mat.neftel)
 ```
 
 
 ```{r}
-#create stacked bar plots of proportions
-
-prop<-getProportions(medecom.result, K=4, lambda=0.01)
-
 # create color palette:
 library(RColorBrewer)
 coul <- brewer.pal(4, "Set1") 
- 
+
+#create stacked bar plots of proportions
+prop.teo <- getProportions(medecom.result.teo, K=4, lambda=0.01)
+prop.var <- getProportions(medecom.result.var, K=4, lambda=0.01)
+prop.wang <- getProportions(medecom.result.wang, K=4, lambda=0.01)
+prop.neftel <- getProportions(medecom.result.neftel, K=4, lambda=0.01)
+
 # Transform this data in %
-data_percentage <- apply(prop, 2, function(x){x*100/sum(x,na.rm=T)})
+data_percentage.teo <- apply(prop.teo, 2, function(x){x*100/sum(x,na.rm=T)})
+data_percentage.var <- apply(prop.var, 2, function(x){x*100/sum(x,na.rm=T)})
+data_percentage.wang <- apply(prop.wang, 2, function(x){x*100/sum(x,na.rm=T)})
+data_percentage.neftel <- apply(prop.neftel, 2, function(x){x*100/sum(x,na.rm=T)})
  
-# Make a stacked barplot--> it will be in %!
-barplot(data_percentage, col=coul , border="white", xlab="samples", ylab = "cell type %",
-        main="cell type proportion for FS based on variance & Weronicka's gene list")
+# Make a stacked barplot
+barplot(data_percentage.teo, col=coul , border="white", xlab="samples", ylab = "cell type %",
+        main="cell type proportion for FS based on Teo 2019", 
+        legend.text = rownames(data_percentage.teo))
+barplot(data_percentage.var, col=coul , border="white", xlab="samples", ylab = "cell type %",
+        main="cell type proportion for FS based on Variance")
+barplot(data_percentage.wang, col=coul , border="white", xlab="samples", ylab = "cell type %",
+        main="cell type proportion for FS based on Wang 2017")
+barplot(data_percentage.neftel, col=coul , border="white", xlab="samples", ylab = "cell type %",
+        main="cell type proportion for FS based on Neftel 2019")
 ```
+
+For better comparison, we are taking a look at the first three samples and try to establish which LMCs have similar proportions
+```{r}
+# Stacked barplots for first 5 samples
+barplot(data_percentage.teo[, 1:5], col=coul , border="white", xlab="samples", 
+        ylab = "cell type %", main="cell type proportion for FS based on Teo 2019\nSamples 1-5")
+barplot(data_percentage.var[, 1:5], col=coul , border="white", xlab="samples", 
+        ylab = "cell type %", main="cell type proportion for FS based on Variance\nSamples 1-5")
+barplot(data_percentage.wang[, 1:5], col=coul , border="white", xlab="samples", 
+        ylab = "cell type %", main="cell type proportion for FS based on Wang 2017\nSamples 1-5")
+barplot(data_percentage.neftel[, 1:5], col=coul , border="white", xlab="samples", 
+        ylab = "cell type %", 
+        main="cell type proportion for FS based on Neftel 2019\nSamples 1-5")
+```
+To sort the LMCs according to most similar patterns across all FS, we correlate each LMC-row of one FS dataset with all rows of another. Best correlation is considered concordant LMC.
+Another approach is to calculate the euclidean distance between rows of two data sets to find the best match.
+```{r}
+# Euclidean distance matrix
+ref.teo <- prop.teo
+rownames(ref.teo) <- c("Teo LMC1", "Teo LMC2", "Teo LMC3", "Teo LMC4")
+
+dist.var <- as.matrix(dist(rbind(ref.teo, prop.var), method = "euclidean"))
+dist.wang <- as.matrix(dist(rbind(ref.teo, prop.wang), method = "euclidean"))
+dist.neftel <- as.matrix(dist(rbind(ref.teo, prop.neftel), method = "euclidean"))
+
+# visualise
+heatmap(dist.var, main = "Teo vs Variance - Euclidean Distance")
+#heatmap(dist.var[1:4, 5:8]) # for single values
+heatmap(dist.wang, main = "Teo vs Wang - Euclidean Distance")
+heatmap(dist.neftel, main = "Teo vs Neftel - Euclidean Distance")
+
+# get vector of lowest distance to use for reordering
+index.var <- unname(apply(dist.var[1:4, 5:8], 1, which.min))
+index.wang <- unname(apply(dist.wang[1:4, 5:8], 1, which.min))
+index.neftel <- unname(apply(dist.neftel[1:4, 5:8], 1, which.min))
+```
+
+
+```{r}
+# Try again with resorting the LMC rows to match Teo
+data_percentage.var1 <- data_percentage.var[index.var, ]
+data_percentage.wang1 <- data_percentage.wang[index.wang,]
+data_percentage.neftel1 <- data_percentage.neftel[index.neftel,]
+
+# plot to see difference
+barplot(data_percentage.teo[, 1:5], col=coul , border="white", xlab="samples", 
+        ylab = "cell type %", main="cell type proportion for FS based on Teo 2019\nSamples 1-5")
+barplot(data_percentage.var1[, 1:5], col=coul , border="white", xlab="samples", 
+        ylab = "cell type %", main="cell type proportion for FS based on Variance
+        \nSamples 1-5 (reorganised)")
+barplot(data_percentage.wang1[, 1:5], col=coul , border="white", xlab="samples", 
+        ylab = "cell type %", main="cell type proportion for FS based on Wang 2017
+        \nSamples 1-5 (reorganised) ")
+barplot(data_percentage.neftel1[, 1:5], col=coul , border="white", xlab="samples", 
+        ylab = "cell type %", 
+        main="cell type proportion for FS based on Neftel 2019\nSamples 1-5 (reorganised)")
+```
+```{r}
+# Now print all data again in a reorganised fashion
+# Make a stacked barplot
+barplot(data_percentage.teo, col=coul , border="white", xlab="samples", ylab = "cell type %",
+        main="cell type proportion for FS based on Teo 2019")#, 
+        #legend.text = rownames(data_percentage.teo))
+barplot(data_percentage.var1, col=coul , border="white", xlab="samples", ylab = "cell type %",
+        main="cell type proportion for FS based on Variance \n(reorganised)")
+barplot(data_percentage.wang1, col=coul , border="white", xlab="samples", ylab = "cell type %",
+        main="cell type proportion for FS based on Wang 2017 \n (reorganised)")
+barplot(data_percentage.neftel1, col=coul , border="white", xlab="samples", ylab = "cell type %",
+        main="cell type proportion for FS based on Neftel 2019 \n (reorganised)")
+```
+
+
+# Common genes in FS
 
 Check how many of the genes are overlapping in each gene list
 ```{r}
@@ -109,17 +234,17 @@ library(VennDiagram)
 
 VennDiagram::get.venn.partitions(list(genes_neftel2019 = genes_neftel2019, 
                                       genes_teo2019 = genes_teo2019, 
-                                      genes_var = genes_var, 
+                                      #genes_var = genes_var, 
                                       genes_wang2017 = genes_wang2017))
 ```
 
 ```{r}
 # print Venn diagramm
 grid.newpage()
-grid::grid.draw(VennDiagram::venn.diagram(list("Neftel 2019 (363)"= genes_neftel2019, 
-                                               "Teo 2019 (500)" = genes_teo2019, 
-                                               "Variance filtered (3170)" = genes_var, 
-                                               "Wang 2017 (150)" = genes_wang2017),
+grid::grid.draw(VennDiagram::venn.diagram(list("Neftel et al. (363)"= genes_neftel2019, 
+                                               "Teo et al. (500)" = genes_teo2019, 
+                                               #"Variance filtered (3170)" = genes_var, 
+                                               "Wang et al. (150)" = genes_wang2017),
                                           NULL))
 ```
 

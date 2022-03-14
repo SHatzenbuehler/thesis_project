@@ -640,6 +640,13 @@ mset_3 = mset_2[RemoveCpG,]
 rm(mset_2, beta_mat_2, rgset_2)
 gc()
 ```
+```{r}
+# save objects for faster reloading
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(QCmetrics2, file = "QCmetrics2.txt", col.names =  T)
+saveRDS(ann450k, file = "ann450k.RDS", compress = F)
+```
+
 ## Renormalisation
 
 After probe filtering, renormalise all values
@@ -653,6 +660,8 @@ saveRDS(object = mset_renorm, file = "MSet_renorm.RDS", compress = FALSE)
 ```{r}
 # load normalised data back in
 mset_renorm <- readRDS(file = "MSet_renorm.RDS")
+QCmetric2 <- read.table("QCmetrics2.txt", row.names = 1)
+ann450k <- readRDS("ann450k.RDS")
 ```
 
 
@@ -685,10 +694,12 @@ group_sex[pheno_2$sex  == "female"] <- 2
 # Biplots of the first 10 PCs
 par(cex=1.0, cex.axis=0.8, cex.main=0.8, xpd = TRUE)
 pairs(project.pca2$x[,1:5], col = c("red", "cornflowerblue")[group_sex], 
-      main="Principal components analysis bi-plot\nPCs 1-5 coloured by sex after chr filtering", pch=16)
+      main="Principal components analysis bi-plot\nPCs 1-5 coloured by sex after chr filtering",
+      pch=16)
 legend("bottomright", fill = c("red", "cornflowerblue"), legend = c("male", "female"))
 pairs(project.pca2$x[,6:10], col = c("red", "cornflowerblue")[group_sex], 
-      main="Principal components analysis bi-plot\nPCs 6-10 coloured by sex after chr filtering", pch=16)
+      main="Principal components analysis bi-plot\nPCs 6-10 coloured by sex after chr filtering",
+      pch=16)
 ```
 
 Again we also check if the plates are still visible
@@ -791,6 +802,29 @@ probe_genes_v2 <- as.data.frame(read.csv("probe_genes_v2.csv", header = T, sep =
 probe_genes_v3 <- as.data.frame(read.csv("probe_genes_v3.csv", header = T, sep = ";"))
 ```
 
+1a) Linking only to top50 of Weronika's gene lists
+```{r}
+# load in gene lists from Weronicka's project
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
+gene_list_wero150 <- read.csv("Weronika_genelist_top50_geneID.csv", header = F)
+
+# create matrix of probes names and associated gene symbols from annotation file
+probe_genes <- as.data.frame(cbind(rownames(ann450k), ann450k$UCSC_RefGene_Name))
+colnames(probe_genes)<- c("probeID", "geneID")
+
+# find probes with matching gene coverage
+pattern_wero150 <- paste(";", gene_list_wero150$V1, ";", sep="", collapse = "|")
+x <- paste(";", probe_genes$geneID, ";", sep="")
+probesID_wero150 <- grep(pattern = pattern_wero150, x = x)
+
+# match probe IDs with probe names and corresponding genes
+probe_genes_wero150 <- probe_genes[probesID_wero150,]
+
+# save lists
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(probe_genes_wero150, "probe_genes_wero150.csv", row.names = F, sep = ";")
+```
+
 2) Linking genes to CpG lists for Teo et al. (2019)
 ```{r}
 # Do the same with Top500 classifier gene list from Teo et al. 2019
@@ -874,6 +908,7 @@ write.table(probe_genes_wang, "probe_genes_wang.csv", row.names = F, sep = ";")
 # load in for faster processing
 probe_genes_wang <- as.data.frame(read.csv("probe_genes_wang.csv", header = T, sep = ";"))
 ```
+
 
 # Prepare data for variance filtering
 
@@ -997,19 +1032,116 @@ list_unique_final <- unique(list_full)
 write.csv(list_unique_final, "var_genes_unique.csv", row.names = F)
 ```
 
+1a) Filtering for 200 random genes
+
+Also, save all genes annotated on the 450k platform to randomly select 200 for which to filter on.
+```{r}
+# select all genes annotated for on the 450k platform
+all450k_genes <- ann450k$UCSC_RefGene_Name
+idx_empty <- which(all450k_genes != "")
+all450k_genes_filt <- all450k_genes[idx_empty]
+list450k_unique <- unique(all450k_genes_filt)
+
+# split gene names after ";", append them all into one big list
+list450k_detached <- strsplit(x = unlist(list450k_unique), split = "[;]")
+list450k_full <- data.frame(matrix(unlist(list450k_detached), ncol=1, byrow=TRUE))
+# again filter for only unique gene names
+list450k_unique_final <- unique(list450k_full)
+
+write.table(list_unique_final, "450k_genes_unique.txt", row.names = F, quote = F )
+```
+
+```{r}
+# take 200 random genes from list
+rand_idx <- sample(1:dim(list450k_unique_final)[1], 200)
+gene_list_random <- as.data.frame(list450k_unique_final[rand_idx,])
+colnames(gene_list_random) <- "V1"
+
+# create matrix of probes names and associated gene symbols from annotation file
+probe_genes <- as.data.frame(cbind(rownames(ann450k), ann450k$UCSC_RefGene_Name))
+colnames(probe_genes)<- c("probeID", "geneID")
+
+# find probes with matching gene coverage
+pattern_random <- paste(";", gene_list_random$V1, ";", sep="", collapse = "|")
+x <- paste(";", probe_genes$geneID, ";", sep="")
+probesID_random <- grep(pattern = pattern_random, x = x)
+
+# match probe IDs with probe names and corresponding genes
+probe_genes_random <- probe_genes[probesID_random,]
+
+# save lists
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(probe_genes_random, "probe_genes_random.csv", row.names = F, sep = ";")
+write.csv(gene_list_random, "random_gene_list.csv", row.names = F)
+```
+
+```{r}
+# Filter beta matrix for random gene list
+beta_renorm <- betas(mset_renorm)
+filt_index <- which(probe_genes_random$probeID %in% rownames(beta_renorm)) 
+
+# determine list of probes to keep for NMF
+#filt_probes <- rownames(var_probes[filt_index,])
+beta_final_random <- beta_renorm[filt_index, ]
+
+# save beta matrix for further analysis
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(beta_final_random, "beta_preprocessed_random.txt", sep="\t",row.names=T)
+```
+
 2) Filtering based on gene list
 ```{r}
 # Alternatively, filter for gene lists
 # change name of gene list as approrpiate (_teo, _nefte, _wang)
-filt_index <- which(probe_genes_wang$probeID %in% rownames(beta_renorm)) 
+beta_renorm <- betas(mset_renorm)
+filt_index <- which(probe_genes_wero150$probeID %in% rownames(beta_renorm)) 
 
 # determine list of probes to keep for NMF
 #filt_probes <- rownames(var_probes[filt_index,])
-beta_final_wang <- beta_renorm[filt_index, ]
+beta_final_wero150 <- beta_renorm[filt_index, ]
 
 # save beta matrix for further analysis
 setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
-write.table(beta_final_wang, "beta_preprocessed_wang.txt", sep="\t",row.names=T)
+write.table(beta_final_wero150, "beta_preprocessed_wero150.txt", sep="\t",row.names=T)
+```
+
+2a) Lowest common denominator
+
+```{r}
+# Match probes to lowest common denominator of gene lists from literature
+# common genes determined in Decon_DNAm_MeDeCom.Rmd
+gene_list_overlap <- as.data.frame(c("S100A11", "NNMT"))
+colnames(gene_list_overlap) <- "V1"
+
+# create matrix of probes names and associated gene symbols from annotation file
+probe_genes <- as.data.frame(cbind(rownames(ann450k), ann450k$UCSC_RefGene_Name))
+colnames(probe_genes)<- c("probeID", "geneID")
+
+# find probes with matching gene coverage
+pattern_overlap <- paste(";", gene_list_overlap$V1, ";", sep="", collapse = "|")
+x <- paste(";", probe_genes$geneID, ";", sep="")
+probesID_overlap <- grep(pattern = pattern_overlap, x = x)
+
+# match probe IDs with probe names and corresponding genes
+probe_genes_overlap <- probe_genes[probesID_overlap,]
+
+# save lists
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(probe_genes_overlap, "probe_genes_overlap.csv", row.names = F, sep = ";")
+```
+
+```{r}
+# Filter beta matrix for random gene list
+beta_renorm <- betas(mset_renorm)
+filt_index <- which(probe_genes_overlap$probeID %in% rownames(beta_renorm)) 
+
+# determine list of probes to keep for NMF
+#filt_probes <- rownames(var_probes[filt_index,])
+beta_final_overlap <- beta_renorm[filt_index, ]
+
+# save beta matrix for further analysis
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(beta_final_overlap, "beta_preprocessed_overlap.txt", sep="\t",row.names=T)
 ```
 
 

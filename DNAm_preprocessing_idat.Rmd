@@ -158,7 +158,7 @@ boxplot(log(unmethylated(mset)), las=2, cex.axis=0.8,
         main = "Unmethylated log distribution (raw)")
 ```
 
-Looking at median intesities of methylated and unmethylated probes to check their distribution. For blood samples, median intensities under 2000 are to be filtered. However, not sure on the procedure for tissue samples - sample signal range seems to be alright.
+Looking at median intensities of methylated and unmethylated probes to check their distribution. For blood samples, median intensities under 2000 are to be filtered. However, not sure on the procedure for tissue samples - sample signal range seems to be alright.
 ```{r}
 ### extract sample intensities 
 ## summarise the intensities of each sample with a single value, the median 
@@ -252,7 +252,7 @@ outlier_check <- outlyx(mset)
 
 # check raw beta density distribution
 plotting density curve of beta values per patient, also checking already for potential confounders. One seems already for the raw data to be race.
-As this effect seems to be very big already on a pure signal strength level, further analysis will be uniracial caucasian. At the end of the study, findings will be eveluated on their bias towards race & gender.
+As this effect seems to be very big already on a pure signal strength level, further analysis will be uniracial caucasian. At the end of the study, findings will be evaluated on their bias towards race & gender.
 ```{r}
 # Density plots
 densityPlot(betas(mset), main="Density plot of raw beta values")
@@ -308,7 +308,7 @@ plot(met_auc_raw, ylim=c(0.5,1), xlab = "patients", ylab="AUC",
 ```
 
 # check MDA plots to see data distribution
-Multidimesional scaling, checks the 1000 most variable positions and relates samples. Distance not to be taken absolute. Just to another way to check for confounders at this point, and to overall see data distribution.
+Multidimesional scaling, checks the 1000 most variable positions and relates samples. Distance not to be taken absolute. Just to another way to check for confounders at this point, and to overall see data distribution. Pretty clear confounder is sex, as was to be expected.
 Potentially should be normalised first (scaling, compare PCA)
 
 ```{r}
@@ -318,7 +318,7 @@ mdsPlot(beta_mat, numPositions = 1000, sampGroups = pheno$race, pch = 16, legend
 ```
 
 # 1.3) Check for genetically identical samples based on SNP probes
-In this step, specific probes in the methylation assay correspndign to common mutation sites (SNPs) and their methylation value are correlated between patients to exclude close family relations (corr <0.09). 
+In this step, specific probes in the methylation assay corresponding to common mutation sites (SNPs) and their methylation value are correlated between patients to exclude close family relations (corr <0.09). 
 
 ```{r}
 # match order of samples with pheno info
@@ -386,7 +386,7 @@ pheno_11 <- pheno[index, ]
 ```
 ```{r}
 # filtering out anything but caucasian patients
-index1 <- which(pheno_11$race == "white")
+index1 <- which(pheno_11$race == "white") 
 #rgset <- rgset[ ,index1]
 mset_1 <- mset_11[ ,index1]
 pheno_1 <- pheno_11[index1, ]
@@ -424,7 +424,7 @@ gc()
 mset_2 <- pfilter(mset_2)
 ```
 ```{r}
-# check which samples pass pfilter
+# check which samples pass pfilter (if we dont overwrite mset_2)
 pFilterPass<-colnames(betas(mset_2)) %in% colnames(betas(mset_2.pf))
 QCmetrics2[, 'pFilterPass'] <- pFilterPass
 isTRUE(sum(QCmetrics2$pFilterPass) == dim(QCmetrics2)[1])
@@ -680,7 +680,7 @@ project.pca.proportionvariances2 <- ((project.pca2$sdev^2) /
 barplot(project.pca.proportionvariances2, cex.names=1, 
         xlab=paste("Principal component (PC), 1-",length(project.pca2$sdev)), 
         ylab="Proportion of variation (%)", 
-        main="Scree plot after SNP and XY filtering", ylim=c(0,15))
+        main="Scree plot after SNP and XY filtering", ylim=c(0,25))
 ```
 
 Next, PCs are again visualised against each other and confounders are checked.
@@ -998,8 +998,8 @@ plot(var_probes$log_std, xlab = "probes", ylab = "Standard deviation", col = var
 1) Variance filtering (potentially including relevant genes)
 ```{r}
 # filtering all probes that have variance over cutoff AND are in either of the gene lists
-var_probes[, "colour"] <- "black"
-var_probes[rel_probes, "colour"] <- "white"
+#var_probes[, "colour"] <- "black"
+#var_probes[rel_probes, "colour"] <- "white"
 filt_index <- which(var_probes$variance >=0.04) # & var_probes$colour == "white")
 
 # determine list of probes to keep for NMF
@@ -1094,15 +1094,15 @@ write.table(beta_final_random, "beta_preprocessed_random.txt", sep="\t",row.name
 # Alternatively, filter for gene lists
 # change name of gene list as approrpiate (_teo, _nefte, _wang)
 beta_renorm <- betas(mset_renorm)
-filt_index <- which(probe_genes_wero150$probeID %in% rownames(beta_renorm)) 
+filt_index <- which(probe_genes_teo$probeID %in% rownames(beta_renorm)) 
 
 # determine list of probes to keep for NMF
 #filt_probes <- rownames(var_probes[filt_index,])
-beta_final_wero150 <- beta_renorm[filt_index, ]
+beta_final_teo <- beta_renorm[filt_index, ]
 
 # save beta matrix for further analysis
 setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
-write.table(beta_final_wero150, "beta_preprocessed_wero150.txt", sep="\t",row.names=T)
+write.table(beta_final_teo, "beta_preprocessed_teo.txt", sep="\t",row.names=T)
 ```
 
 2a) Lowest common denominator
@@ -1131,7 +1131,7 @@ write.table(probe_genes_overlap, "probe_genes_overlap.csv", row.names = F, sep =
 ```
 
 ```{r}
-# Filter beta matrix for random gene list
+# Filter beta matrix for overlap
 beta_renorm <- betas(mset_renorm)
 filt_index <- which(probe_genes_overlap$probeID %in% rownames(beta_renorm)) 
 

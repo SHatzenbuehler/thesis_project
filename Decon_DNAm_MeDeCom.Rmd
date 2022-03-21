@@ -28,7 +28,7 @@ library(org.Hs.eg.db)
 
 ## Loading in data
 
-After preprocessing the raw methylation data, we extracted a matrix of beta vlaues after some filtering based on feature selection. Multiple FS criteria have been applied, and in the next steps have been used in the NMF experiments.
+After preprocessing the raw methylation data, we extracted a matrix of beta values after some filtering based on feature selection. Multiple FS criteria have been applied, and in the next steps have been used in the NMF experiments.
 FS criteria: 
 1) variance based
 2) biologically motivated on base on published gene lists (Teo et al. 2019, Wang et al. 2017, Neftel et al. 2019, Gaska et al 2021)
@@ -37,13 +37,17 @@ FS criteria:
 ```{r}
 #load in example data
 data(example.dataset, package="MeDeCom")
+
+# randomly select features to see if results still show same patterns
+rand_idx <- sample(1:dim(D)[1], 1500)
+beta_mat <- D[rand_idx, ]
 ```
 ```{r}
 # load beta matrix from preprocessed data
 # for preprocessed data based on biologically relevant gene lsit: _teo, _wang, _neftel, 
 # _random, _wero150, _overlap
 setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
-beta_mat <- as.matrix(read.table(file = "beta_preprocessed_overlap.txt"))
+beta_mat <- as.matrix(read.table(file = "beta_preprocessed_var_black.txt"))
 ```
 
 ## Running Deconvolution
@@ -65,7 +69,7 @@ medecom.result<-runMeDeCom(beta_mat, 2:10, c(0,10^(-5:-1)), NINIT=10,
 
 # save result
 setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
-saveRDS(object = medecom.result, file = "Medecom_result_overlap.RDS", compress = FALSE)
+saveRDS(object = medecom.result, file = "Medecom_result_example.RDS", compress = FALSE)
 ```
 
 ### Result analysis
@@ -127,8 +131,8 @@ As example we only take the NMF results with FS based on Teo et al. for this.
 
 ```{r}
 # get T matrices from the results
-paras.teo <- medecom.result.teo@parameters
-output.teo <- medecom.result.teo@outputs
+paras.teo <- medecom.result.teo@parameters   #change input here
+output.teo <- medecom.result.teo@outputs     #change input here
 output.teo <- output.teo$'1'
 T.teo <- output.teo$'T'
 
@@ -139,16 +143,30 @@ k4 <- data.frame(lambda_0 = T.teo[[3]], lambda_1e05 = T.teo[[12]], lambda_1e04 =
 
 ```{r}
 # make histogram
-par(mfrow = c(2,3))
+par(mfrow = c(1,3))
 hist(as.matrix(k4[,1:4]), main = "lambda = 0", xlab = "beta values")
-hist(as.matrix(k4[,5:8]), main = "lambda = 1e-05", xlab = "beta values")
-hist(as.matrix(k4[,9:12]), main = "lambda = 1e-04", xlab = "beta values")
-hist(as.matrix(k4[,13:16]), main = "lambda = 0.001", xlab = "beta values")
+#hist(as.matrix(k4[,5:8]), main = "lambda = 1e-05", xlab = "beta values")
+#hist(as.matrix(k4[,9:12]), main = "lambda = 1e-04", xlab = "beta values")
+#hist(as.matrix(k4[,13:16]), main = "lambda = 0.001", xlab = "beta values")
 hist(as.matrix(k4[,17:20]), main = "lambda = 0.01", xlab = "beta values")
 hist(as.matrix(k4[,21:24]), main = "lambda = 0.1", xlab = "beta values")
 #mtext("Beta value distribution of LMCs for different lambda", side = 3, line = -2, outer = T)
 ```
-
+```{r}
+# print for each individual LMC
+par(mfrow = c(2,2))
+hist(as.matrix(k4[,17]), main = "lambda = 0.01 for LMC1", xlab = "beta values")
+hist(as.matrix(k4[,18]), main = "lambda = 0.01 for LMC2", xlab = "beta values")
+hist(as.matrix(k4[,19]), main = "lambda = 0.01 for LMC3", xlab = "beta values")
+hist(as.matrix(k4[,20]), main = "lambda = 0.01 for LMC4", xlab = "beta values")
+```
+```{r}
+# Compare with the distribution of the original data
+par(mfrow = c(1,2))
+hist(beta_mat.teo, main = "beta values before NNMF (n = 98)\n filtered based on Teo et al.", xlab = "beta values", cex.main = 1) #change input here
+hist(as.matrix(k4[,17:20]), main = "beta value distribution of LMCs (k = 4)\n for lambda = 0.01", 
+     xlab = "beta values", cex.main = 1)
+```
 
 # Extractiong Latent Methylation components
 
@@ -189,9 +207,64 @@ plotLMCs(medecom.result.wero, K=4, lambda=0.01, type="MDS", D = beta_mat.wero)
 plotLMCs(medecom.result.overlap, K=4, lambda=0.01, type="MDS", D = beta_mat.overlap)
 ```
 
+# PCA plots
+To better interpret the distribution of the data and the different directions of the LMCs, we project them into a PCA space of the first two PCs. For this, we multiply each LMC (which is kind of a profile including weights for all probes) with the weights, or loadings, of the PCA for the data they're based off. The results of this weighted sum or dot product gives us the coordinates of the LMC in the PCA space of the data (if done for both PC1 and 2 here)
+
 ```{r}
+# get T matrices from the results
+paras.teo <- medecom.result.random@parameters  #change input here
+output.teo <- medecom.result.random@outputs    #change input here
+output.teo <- output.teo$'1'
+Tall.teo <- output.teo$'T'
+T.teo <- as.data.frame(Tall.teo[[39]])
+colnames(T.teo) <- c("LMC1", "LMC2", "LMC3", "LMC4")
+
 # make PCA plots to put the LMCs in 
+pca.teo <- prcomp(t(beta_mat.random))         #change input here
+pred.lmc <- data.frame(matrix(ncol=4,nrow=4, 
+                              dimnames=list(c("LMC1", "LMC2", "LMC3", "LMC4"),
+                                            c("PC1", "PC2", "PC3", "PC4"))))
+for (i in 1:dim(T.teo)[2]){
+  pred.lmc[i,1] <- (T.teo[,i] - pca.teo$center) %*% pca.teo$rotation[,1]
+  pred.lmc[i,2] <- (T.teo[,i] - pca.teo$center) %*% pca.teo$rotation[,2]
+}
 ```
+```{r}
+plot(pca.teo$x[,1:2], xlim = c(min(pred.lmc[,1])-1, max(pred.lmc[,1]+1)), 
+     ylim = c(min(pred.lmc[,2])-1, max(pred.lmc[,2]+2)), pch = 16, 
+     main = "PCA of LMC projection filtered for random genes")
+points(pred.lmc[,1:2], col = "red", pch = 16)
+#text(pred.lmc, labels = rownames(pred.lmc), pos = 3)
+text(pred.lmc[,1:2], labels = rownames(pred.lmc[index.random,]), pos = 3) # taken from after heatmaps
+```
+
+```{r}
+# have a look at PC 3 and 4 to see the 4th LMC better
+# create Coordniates for PC3 and 4 for LMCs
+for (i in 1:dim(T.teo)[2]){
+  pred.lmc[i,3] <- (T.teo[,i] - pca.teo$center) %*% pca.teo$rotation[,3]
+  pred.lmc[i,4] <- (T.teo[,i] - pca.teo$center) %*% pca.teo$rotation[,4]
+  #pred.lmc[i,5] <- (T.teo[,i] - pca.teo$center) %*% pca.teo$rotation[,5]
+}
+```
+```{r}
+# plot multiple PCA spaces
+idx <- subset(expand.grid(x=1:4,y=1:4),x!=y)
+i <-1
+pairs(pca.teo$x[,1:4], pch=16, xlim = c(min(pred.lmc-1), max(pred.lmc+1)), 
+      ylim = c(min(pred.lmc-1), max(pred.lmc+1)), 
+            panel=function(x, y, ...) {
+                points(x, y, pch=16, cex = 1.5)
+                points(pred.lmc[,idx[i,"y"]],pred.lmc[,idx[i,"x"]],
+                             cex=1.7,pch=16,col='red')
+                text(pred.lmc[,idx[i,"y"]],pred.lmc[,idx[i,"x"]], 
+                     labels = rownames(pred.lmc[index.random,]), pos = 3)
+                     #labels = rownames(pred.lmc), pos = 3)
+                i <<- i +1},
+      main = "PCA of LMC projection filtered for random genes"
+            )
+```
+
 
 ## Visualise and compare LMC proportions between different FS selections
 
@@ -310,13 +383,14 @@ ref.overlap <- prop.overlap
 rownames(ref.overlap) <- c("Overlap LMC1", "Overlap LMC2", "Overlap LMC3", "Overlap LMC4")
 
 # make one distance matrix of all
-dist.all <- as.matrix(dist(rbind(ref.teo, ref.var, ref.wang, ref.neftel, ref.overlap, 
+dist.all <- as.matrix(dist(rbind(ref.teo, ref.var, ref.wang, ref.neftel, #ref.overlap, 
                                  ref.wero, ref.random), method = "euclidean"))
-
+```
+```{r}
 # visualise
 heatmap(dist.all, main = "Euclidean Distance between all LMC proportions")
 heatmap.2(dist.all, main = "Euclidean Distance between all LMC proportions", 
-          trace = "none", density.info = "none")
+          trace = "none", density.info = "none", margins =c(8,8))
 ```
 
 Using the corresponding LMCs across different FS results, we reorganise the barplots to better compare proportions between the results, trying to match up most similar LMC proportions for all.
@@ -372,7 +446,53 @@ barplot(data_percentage.overlap1, col=coul , border="white", xlab="samples", yla
         main="cell type proportion for FS based on minimal overlapping genes \n (reorganised)")
 ```
 
-## Analysing similarities in Feature Selection prior to NMF
+## Cross-checking with non-caucasian samples
+
+```{r}
+# load data in
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
+medecom.result.black_teo <- readRDS("Medecom_result_teo_black.RDS")
+medecom.result.black_var <- readRDS("Medecom_result_var_black.RDS")
+
+beta_mat.black_teo <- as.matrix(read.table(file = "beta_preprocessed_teo_black.txt"))
+beta_mat.black_var <- as.matrix(read.table(file = "beta_preprocessed_var_black.txt"))
+```
+
+```{r}
+# plot CV error curves for optimal k and lambda
+plotParameters(medecom.result.black_teo)
+plotParameters(medecom.result.black_var)
+```
+```{r}
+# create proportion plots
+prop.black_teo <- getProportions(medecom.result.black_teo, K=4, lambda=0.01)
+prop.black_var <- getProportions(medecom.result.black_var, K=4, lambda=0.01)
+
+data_percentage.black_teo <- apply(prop.black_teo, 2, function(x){x*100/sum(x,na.rm=T)})
+data_percentage.black_var <- apply(prop.black_var, 2, function(x){x*100/sum(x,na.rm=T)})
+
+# relate proportions to one another
+ref.black_teo <- prop.black_teo
+rownames(ref.black_teo) <- c("Black Teo LMC1", "Black Teo LMC2", "Black Teo LMC3", 
+                             "Black Teo LMC4")
+ref.black_var <- prop.black_var
+rownames(ref.black_var) <- c("Black var LMC1", "Black var LMC2", "Black var LMC3", 
+                             "Black var LMC4")
+# Heatmap of distance between both black runs
+dist.black <- as.matrix(dist(rbind(ref.black_teo, ref.black_var), method = "euclidean"))
+heatmap(dist.black, main = "Black: Teo vs Variance - Euclidean Distance", margins = c(8,8))
+```
+```{r}
+# cross check distance with previous experiments
+dist.blackVsWhite <- as.matrix(dist(rbind(ref.black_teo, ref.black_var, ref.teo), 
+                                    method = "euclidean"))
+heatmap(dist.black, main = "Caucasian vs Black Americans - Euclidean Distance", margins = c(8,8))
+
+# this wont work because of different matrix dimensions. But how to compare????
+```
+
+
+## Analysing similarities in Feature Selection prior to NNMF
 
 To investigate how similar the criteria applied for feature selection have been, we check for common genes within the lists as well as functional similarities by means of KEGG enrichment clustering.
 
@@ -522,7 +642,7 @@ for (x in unique(cluster_data$genelist)){
 # make data -log10
 cluster_heat_log <- as.matrix(-log10(cluster_heat))
 #plot heatmap
-superheat(cluster_heat_log, scale = T, heat.pal = c("blue", "white", "red")) 
+superheat(cluster_heat_log, scale = F, heat.pal = c("blue", "white", "red")) 
           #order.rows = order(cluster_heat$teo))
           #heat.col.scheme = "red")#heat.na.col = "white",
 ```

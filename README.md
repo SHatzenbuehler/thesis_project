@@ -1,2 +1,3 @@
 # thesis_project
-Deconvolution analysis of DNA methylation data, RNAseq data, and single-cell RNAseq of glioblastoma patients (TCGA, clincal data).
+Deconvolution analysis of DNA methylation data and RNAseq data of glioblastoma patients (from TCGA).
+

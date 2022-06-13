@@ -27,6 +27,8 @@ suppressMessages(library(org.Hs.eg.db))
 suppressMessages(library(wateRmelon))
 suppressMessages(library(FlowSorted.DLPFC.450k))
 suppressMessages(library(stringr))
+suppressMessages(library(RColorBrewer))
+suppressMessages(library(dendextend))
 ```
 
 ## Loading in data
@@ -156,8 +158,8 @@ As example we only take the NMF results with FS based on Teo et al. for this.
 
 ```{r}
 # get T matrices from the results
-paras.teo <- medecom.result.wang@parameters   #change input here
-output.teo <- medecom.result.wang@outputs     #change input here
+paras.teo <- medecom.result.black_var@parameters   #change input here
+output.teo <- medecom.result.black_var@outputs     #change input here
 output.teo <- output.teo$'1'
 T.teo <- output.teo$'T'
 
@@ -182,7 +184,8 @@ mtext(expression(bold("Beta value distribution of LMCs for different lambda")),
 ```{r}
 # to make them all the comparable LMCS, we first run the barplot part below toe get different indices
 old_order <- c(17,18,19,20)
-new_order <- old_order[index.wang] #change input here
+#new_order <- old_order[index.black_teo] #change input here
+new_order <- old_order # for var experiments
 
 # print for each individual LMC
 par(mfrow = c(2,4))#, mar = c(3,3,3,3))
@@ -200,7 +203,7 @@ hist(as.matrix(k4[,new_order[4]]), main = "lambda = 0.01 for LMC4", xlab = "beta
 ```{r}
 # Compare with the distribution of the original data
 par(mfrow = c(1,2))
-hist(beta_mat.random_probes, main = "beta values before NNMF (n = 94)\n filtered for random probes ", xlab = "beta values", cex.main = 1, col = "dark green") #change input here
+hist(beta_mat.random_probes, main = "beta values before NMF (n = 94)\n filtered for random probes ", xlab = "beta values", cex.main = 1, col = "dark green") #change input here
 hist(as.matrix(k4[,17:20]), main = "beta value distribution of LMCs (k = 4)\n for lambda = 0.01", 
      xlab = "beta values", cex.main = 1, col = "light green")
 ```
@@ -240,20 +243,20 @@ To better interpret the distribution of the data and the different directions of
 
 ```{r}
 # get T matrices from the results
-paras.teo <- medecom.result.wang@parameters  #change input here
-output.teo <- medecom.result.wang@outputs    #change input here
+paras.teo <- medecom.result.black_var@parameters  #change input here
+output.teo <- medecom.result.black_var@outputs    #change input here
 output.teo <- output.teo$'1'
 Tall.teo <- output.teo$'T'
 T.teo <- as.data.frame(Tall.teo[[39]])
 colnames(T.teo) <- c("LMC1", "LMC2", "LMC3", "LMC4")
 
 # make PCA plots to put the LMCs in 
-pca.teo <- prcomp(t(beta_mat.wang))         #change input here
+pca.teo <- prcomp(t(beta_mat.black_var))         #change input here
 pred.lmc <- data.frame(matrix(ncol=4,nrow=4, 
                               dimnames=list(c("LMC1", "LMC2", "LMC3", "LMC4"),
                                             c("PC1", "PC2", "PC3", "PC4"))))
 #adjust LMCs to be same for exery experiment
-T.teo <- T.teo[,index.wang]                #change input here
+#T.teo <- T.teo[,index.black_teo]                #change input here
 
 # project LMCs into PCA space
 for (i in 1:dim(T.teo)[2]){
@@ -293,7 +296,7 @@ pairs(pca.teo$x[,1:4], pch=16, xlim = c(min(pred.lmc-1), max(pred.lmc+1)),
                      #labels = rownames(pred.lmc[index.var,]), pos = 3)
                      labels = rownames(pred.lmc), pos = 3)
                 i <<- i +1},
-      main = "PCA of LMC projection filtered for random probes"
+      main = "Black sample group: PCA of LMC projection filtered for var"
             )
 ```
 
@@ -374,7 +377,6 @@ To compare NMF results for different FS prior to it, we visualise the resulting 
 
 ```{r}
 # create color palette:
-library(RColorBrewer)
 coul <- brewer.pal(4, "PRGn") 
 
 #create stacked bar plots of proportions
@@ -561,8 +563,8 @@ beta_mat.black_var <- as.matrix(read.table(file = "beta_preprocessed_var_black.t
 
 ```{r}
 # plot CV error curves for optimal k and lambda
-plotParameters(medecom.result.black_teo)
-plotParameters(medecom.result.black_var)
+plotParameters(medecom.result.black_teo)#, statistic = "rsme")
+plotParameters(medecom.result.black_var)#, statistic = "rsme")
 ```
 ```{r}
 # create proportion plots
@@ -574,15 +576,24 @@ data_percentage.black_var <- apply(prop.black_var, 2, function(x){x*100/sum(x,na
 
 # relate proportions to one another
 ref.black_teo <- prop.black_teo
-rownames(ref.black_teo) <- c("Black Teo LMC1", "Black Teo LMC2", "Black Teo LMC3", 
-                             "Black Teo LMC4")
+rownames(ref.black_teo) <- c("Black teo LMC1", "Black teo LMC2", "Black teo LMC3", 
+                             "Black teo LMC4")
 ref.black_var <- prop.black_var
-rownames(ref.black_var) <- c("Black var LMC1", "Black var LMC2", "Black var LMC3", 
-                             "Black var LMC4")
+rownames(ref.black_var) <- c("var LMC1", "var LMC2", "var LMC3", 
+                             "var LMC4")
+# remap black teo LMCs to vars
+dist.black <- as.matrix(dist(rbind(ref.black_var, ref.black_teo), method = "euclidean"))
+index.black_teo <- unname(apply(dist.black[1:4, 5:8], 1, which.min))
+
+ref.black_teo1 <- ref.black_teo[index.black_teo,]
+rownames(ref.black_teo1) <- c("teo LMC1", "teo LMC2", "teo LMC3", 
+                             "teo LMC4")
+dist.black1 <- as.matrix(dist(rbind(ref.black_var, ref.black_teo1), method = "euclidean"))
+
 # Heatmap of distance between both black runs
-dist.black <- as.matrix(dist(rbind(ref.black_teo, ref.black_var), method = "euclidean"))
 par(cex.main=.8)
-heatmap(dist.black, main = "Black: Teo vs Variance - Euclidean Distance", margins = c(9,9))
+heatmap.2(dist.black1, main = "Black sample group: similarity of LMC proportions", 
+          trace = "none", density.info = "none", margins = c(9,9))
 ```
 ```{r}
 # cross check distance with previous experiments
@@ -605,15 +616,15 @@ output.black_teo <- medecom.result.black_teo@outputs    # change input here
 output.black_teo <- output.black_teo$'1'
 Tall.black_teo <- output.black_teo$'T'
 T.black_teo <- as.data.frame(Tall.black_teo[[39]])
-colnames(T.black_teo) <- c("LMC1 Black", "LMC2 Black", "LMC3 Black", "LMC4 Black")
-T.black_teo_m <- T.black_teo[probe_idx_bl,]
+T.black_teo_m <- T.black_teo[probe_idx_bl, ]#index.black_teo]
 rownames(T.black_teo_m) <- rownames(beta_mat.black_teo[probe_idx_bl,]) # and here
+colnames(T.black_teo_m) <- c("LMC1 Black", "LMC2 Black", "LMC3 Black", "LMC4 Black")
 
 # correlate both LMC profile
-dist.cau_bl <- as.matrix(dist(rbind(t(T.black_teo_m), t(T.teo_m)), method = "euclidean"))
+dist.cau_bl <- as.matrix(dist(rbind(t(T.teo_m),(t(T.black_teo_m))), method = "euclidean"))
 par(cex.main=.8)
-heatmap(dist.cau_bl, main = "Caucasion vs Black for Teo filtered", 
-         margins = c(8,8))
+heatmap.2(dist.cau_bl, main = "Caucasion vs Black: LMC profile similarity for teo", 
+         trace = "none", density.info = "none", col = redblue(20), margins = c(8,8))
 ```
 
 
@@ -869,6 +880,84 @@ prf_comb_dist <- sapply(as.list(as.data.frame(prf_comb)), FUN = f2, y = prf_ecc)
 
 plot(prf_comb_dist)
 ```
+
+
+# Trying hierarchical clustering with the LMC proportions
+
+I want to try and match the previously established groups for the methylation data to a cluster analysis of the proportions; maybe there are some groups that share similar LMC proportions.
+
+```{r}
+# read in clinical data
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
+clinical <- readRDS(file = "clinical.RDS")
+#rename sample IDS to match beta matrices
+new_IDs <- str_replace_all(rownames(clinical), '-', '.')
+rownames(clinical) <- new_IDs
+# find corresponding patients
+sample_IDs <- which(rownames(clinical) %in% colnames(beta_mat.teo)) # change unput here
+# extract relevant group info
+group_type <- clinical$paper_Original.Subtype[sample_IDs]
+group_type <- droplevels(group_type)
+
+group_type_meth <- clinical$paper_Pan.Glioma.DNA.Methylation.Cluster[sample_IDs]
+group_type_meth <- droplevels(group_type_meth)
+
+# add level to represent saptients without group
+levels(group_type_meth) <- c(levels(group_type_meth),"none")
+group_type_meth[is.na(group_type_meth)] <- "none"
+
+levels(group_type) <- c(levels(group_type),"none")
+group_type[is.na(group_type)] <- "none"
+
+# get data proportions
+prop.data <- getProportions(medecom.result.teo, # change input here
+                            K=4, lambda=0.01) 
+#colnames(prop.data) <- colnames(beta_mat.teo)
+colnames(prop.data) <- colnames(prop.data, do.NULL = F, prefix = "V_")
+```
+
+
+```{r}
+# cluster euclidean distance hierarchically for proportions
+hc <- hclust(dist(t(prop.data)))
+dend <- as.dendrogram(hc)
+
+# make colours based on previously known clusters
+colours_dend <- c(brewer.pal(nlevels(group_type_meth)-1, 'Set1'), "black") # change here
+clusters <- as.numeric(factor(group_type_meth, levels = levels(group_type_meth))) # change here
+names(clusters) <- names(cutree(hc,4))
+
+# function to get color labels
+colLab <- function(n) {
+    if (is.leaf(n)) {
+        a <- attributes(n)
+        labCol <- colours_dend[clusters[which(names(clusters) == a$label)]]
+        attr(n, "nodePar") <- c(a$nodePar, lab.col = labCol)
+    }
+    n
+}
+
+# make branches fatter
+dend <- assign_values_to_branches_edgePar(dend, value = 2, edgePar = "lwd")
+
+# colour branches as well
+dend <- assign_values_to_leaves_edgePar(dend, 
+                                        value = colours_dend[clusters[order.dendrogram(dend)]], 
+                                        edgePar = "col")
+
+#combine everything into one dendrogram
+clusDendro = dendrapply(dend, colLab)
+ 
+# visualise
+plot(clusDendro, main = "Dendrogram of LMC proportions \n coloured by DNAm groups",
+     cex = 0.6, ylab = "height")
+legend("topright", 
+     legend = c(levels(group_type_meth)),  # change input here
+     col = c(colours_dend),  
+     pch = 20, bty = "n",  pt.cex = 2.5, cex = 1.2, 
+     text.col = "black", horiz = FALSE, inset = c(0, 0.1))
+```
+
 
 
 

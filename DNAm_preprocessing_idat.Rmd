@@ -420,6 +420,7 @@ mset_2 <- mset_1[ ,qc_good]
 pheno_2 <- pheno_1[qc_good, ]
 QCmetrics2 <- QCmetrics1[qc_good, ]
 
+
 # remove previous variables for storage space
 rm(mset_1, mset, QCmetrics1, QCmetrics11) 
 gc()
@@ -445,8 +446,8 @@ dnamage <- agep(betas(mset_2))
 QCmetrics2 <- cbind(QCmetrics2, dnamage)
 
 # plot visually predicted ages
-hist(dnamage, xlab = "DNAmAge", main = "Predicted Age")
-plot(y=dnamage, x=pheno_2$age, ylab = "Predicted", xlab = "Reported",xlim=c(0,100),ylim=c(0,200), main = "Age predicted vs reported")
+hist(dnamage[,1], xlab = "DNAmAge", main = "Predicted Age")
+plot(y=dnamage[,1], x=pheno_2$age, ylab = "Predicted", xlab = "Reported",xlim=c(0,100),ylim=c(0,200), main = "Age predicted vs reported")
 ```
 
 
@@ -572,7 +573,7 @@ for (i in unique(pheno_2$sentrix_id)){
 # Biplots of the first 10 PCs
 par(cex=1.0, cex.axis=0.8, cex.main=0.8, xpd = T)
 pairs(project.pca$x[,1:5], col = rainbow(nCol)[group_sentrix], 
-      main="Principal components analysis bi-plot\nPCs 1-5 coloured by Plate", pch=16)
+      main="Principal components analysis bi-plot\nPCs 1-5 coloured by assay plate", pch=16)
 legend(0.05, 0.02, fill = rainbow(nCol),legend = unique(pheno_2$sentrix_id), 
        ncol = 5, text.width = 0.15, cex = 0.7, x.intersp = 0.2)
 pairs(project.pca$x[,6:10], col = rainbow(nCol)[group_sentrix], 
@@ -725,7 +726,7 @@ for (i in unique(pheno_2$sentrix_id)){
 # Biplots of the first 10 PCs
 par(cex=1.0, cex.axis=0.8, cex.main=0.8, xpd = T)
 pairs(project.pca2$x[,1:5], col = rainbow(nCol)[group_sentrix], 
-      main="Principal components analysis bi-plot\nPCs 1-5 coloured by Plate after chr filtering",
+      main="Principal components analysis bi-plot\nPCs 1-5 coloured by assay plate after chr filtering",
       pch=16)
 legend(0.05, 0.02, fill = rainbow(nCol),legend = unique(pheno_2$sentrix_id), 
        ncol = 5, text.width = 0.15, cex = 0.7, x.intersp = 0.2)

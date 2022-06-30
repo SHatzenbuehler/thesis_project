@@ -9,10 +9,10 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-#### Non-negative Matrix Factorisation based on Lutsik et al. (2016): MeDeCom
+# Non-negative Matrix Factorisation based on Lutsik et al. (2016): MeDeCom
 
 
-# Packages
+#### Packages
 
 ```{r}
 suppressMessages(library(devtools))
@@ -89,9 +89,9 @@ setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis
 saveRDS(object = medecom.result, file = "Medecom_result_var2.RDS", compress = FALSE)
 ```
 
-### Result analysis
+## Result analysis
 
-## Loading in all results
+### Loading in all results
 ```{r}
 # Reload results after saving
 setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
@@ -115,7 +115,7 @@ beta_mat.random_probes <- as.matrix(read.table(file = "beta_preprocessed_random_
 
 ## Visualisation 
 
-# Error measures for different lambda settings
+### Error measures for different lambda settings
 
 To select optimal hyperparameters, we have a look at error curves for differing lambda and number of LMCs (k). Generally, we aim to take values in the "elbow" of the curve, as this is normally a good trade-off value regarding accuracy and bias. In our case, we aim to take the highest lambda giving us the lowest CV error, at a value for k which is the lowest before a more steady drop in CV error.
 Having selected both parameters, we can anaylse the results more in depth using both of them.
@@ -151,15 +151,16 @@ plotParameters(medecom.result.random, K=4, lambdaScale="log")
 plotParameters(medecom.result.wero, K=4, lambdaScale="log")
 plotParameters(medecom.result.overlap, K=4, lambdaScale="log")
 ```
-# Visualise LMC distribution for different lambda
+
+### Visualise LMC distribution for different lambda
 
 Make histogramm of LMC profiles to visualise effect of lambda regularisation. Lambda closer to zero results in a value distribution closer to 0.5, whereas higher lambdas push the methylation values more towards 0 and 1. This is closer to what we would expect in more uniform celltypes, since this suggests a more conform status of being (un)methylated per probe for each subtype.
 As example we only take the NMF results with FS based on Teo et al. for this.
 
 ```{r}
 # get T matrices from the results
-paras.teo <- medecom.result.black_var@parameters   #change input here
-output.teo <- medecom.result.black_var@outputs     #change input here
+paras.teo <- medecom.result.black_teo@parameters   #change input here
+output.teo <- medecom.result.black_teo@outputs     #change input here
 output.teo <- output.teo$'1'
 T.teo <- output.teo$'T'
 
@@ -184,8 +185,8 @@ mtext(expression(bold("Beta value distribution of LMCs for different lambda")),
 ```{r}
 # to make them all the comparable LMCS, we first run the barplot part below toe get different indices
 old_order <- c(17,18,19,20)
-#new_order <- old_order[index.black_teo] #change input here
-new_order <- old_order # for var experiments
+new_order <- old_order[index.black_teo] #change input here
+#new_order <- old_order # for var experiments
 
 # print for each individual LMC
 par(mfrow = c(2,4))#, mar = c(3,3,3,3))
@@ -210,7 +211,7 @@ hist(as.matrix(k4[,17:20]), main = "beta value distribution of LMCs (k = 4)\n fo
 
 ## Visualisation of LMC relationships
 
-# Dendrograms
+### Dendrograms
 Visualising the closeness of the extracted LMCs in form of dendrograms
 
 ```{r}
@@ -238,20 +239,20 @@ plotLMCs(medecom.result.wero, K=4, lambda=0.01, type="MDS", D = beta_mat.wero)
 plotLMCs(medecom.result.overlap, K=4, lambda=0.01, type="MDS", D = beta_mat.overlap)
 ```
 
-# PCA plots
+### PCA plots
 To better interpret the distribution of the data and the different directions of the LMCs, we project them into a PCA space of the first two PCs. For this, we multiply each LMC (which is kind of a profile including weights for all probes) with the weights, or loadings, of the PCA for the data they're based off. The results of this weighted sum or dot product gives us the coordinates of the LMC in the PCA space of the data (if done for both PC1 and 2 here)
 
 ```{r}
 # get T matrices from the results
-paras.teo <- medecom.result.black_var@parameters  #change input here
-output.teo <- medecom.result.black_var@outputs    #change input here
+paras.teo <- medecom.result.var@parameters  #change input here
+output.teo <- medecom.result.var@outputs    #change input here
 output.teo <- output.teo$'1'
 Tall.teo <- output.teo$'T'
 T.teo <- as.data.frame(Tall.teo[[39]])
 colnames(T.teo) <- c("LMC1", "LMC2", "LMC3", "LMC4")
 
 # make PCA plots to put the LMCs in 
-pca.teo <- prcomp(t(beta_mat.black_var))         #change input here
+pca.teo <- prcomp(t(beta_mat.var))         #change input here
 pred.lmc <- data.frame(matrix(ncol=4,nrow=4, 
                               dimnames=list(c("LMC1", "LMC2", "LMC3", "LMC4"),
                                             c("PC1", "PC2", "PC3", "PC4"))))
@@ -268,9 +269,9 @@ for (i in 1:dim(T.teo)[2]){
 plot(pca.teo$x[,1:2], xlim = c(min(pred.lmc[,1])-1, max(pred.lmc[,1]+1)), 
      ylim = c(min(pred.lmc[,2])-1, max(pred.lmc[,2]+2)), pch = 16, 
      main = "PCA of LMC projection filtered for teo")
-points(pred.lmc[index.teo,1:2], col = "red", pch = 16)
-text(pred.lmc, labels = rownames(pred.lmc), pos = 3)
-#text(pred.lmc[,1:2], labels = rownames(pred.lmc[index.random,]), pos = 3) # taken from after heatmaps
+points(pred.lmc[index.teo,1:2], col = "red", pch = 16) 
+text(pred.lmc, labels = rownames(pred.lmc), pos = 3) # this is for var
+#text(pred.lmc[,1:2], labels = rownames(pred.lmc[index.teo,]), pos = 3) # taken from after heatmaps
 ```
 
 ```{r}
@@ -296,7 +297,7 @@ pairs(pca.teo$x[,1:4], pch=16, xlim = c(min(pred.lmc-1), max(pred.lmc+1)),
                      #labels = rownames(pred.lmc[index.var,]), pos = 3)
                      labels = rownames(pred.lmc), pos = 3)
                 i <<- i +1},
-      main = "Black sample group: PCA of LMC projection filtered for var"
+      main = "PCA of LMC projection filtered for var"
             )
 ```
 
@@ -310,37 +311,64 @@ clinical <- readRDS(file = "clinical.RDS")
 new_IDs <- str_replace_all(rownames(clinical), '-', '.')
 rownames(clinical) <- new_IDs
 # find corresponding patients
-sample_IDs <- which(rownames(clinical) %in% colnames(beta_mat.teo))
-# extract relevant group info
-group_type <- clinical$paper_Original.Subtype[sample_IDs]
-group_type_meth <- clinical$paper_Pan.Glioma.DNA.Methylation.Cluster[sample_IDs]
+sample_IDs <- match(colnames(beta_mat.var), rownames(clinical))
+clinical_matched <- clinical[sample_IDs,]
 
+# extract relevant group info
+group_type_rna <- clinical_matched$paper_Transcriptome.Subtype
+group_type_meth <- clinical_matched$paper_Pan.Glioma.DNA.Methylation.Cluster
+
+# add level to represent patients without group
+group_type_meth <- droplevels(group_type_meth)
+levels(group_type_meth) <- c(levels(group_type_meth),"none")
+group_type_meth[is.na(group_type_meth)] <- "none"
+
+group_type_rna <- droplevels(group_type_rna)
+levels(group_type_rna) <- c(levels(group_type_rna),"none")
+group_type_rna[is.na(group_type_rna)] <- "none"
+```
+
+
+```{r}
 # Make PCA
 # get T matrices from the results
-paras.teo <- medecom.result.neftel@parameters  #change input here
-output.teo <- medecom.result.neftel@outputs    #change input here
+paras.teo <- medecom.result.var@parameters  #change input here
+output.teo <- medecom.result.var@outputs    #change input here
 output.teo <- output.teo$'1'
 Tall.teo <- output.teo$'T'
 T.teo <- as.data.frame(Tall.teo[[39]])
 colnames(T.teo) <- c("LMC1", "LMC2", "LMC3", "LMC4")
 
 # make PCA plots to put the LMCs in 
-pca.teo <- prcomp(t(beta_mat.neftel))         #change input here
+pca.teo <- prcomp(t(beta_mat.var))         #change input here
 pred.lmc <- data.frame(matrix(ncol=4,nrow=4, 
                               dimnames=list(c("LMC1", "LMC2", "LMC3", "LMC4"),
                                             c("PC1", "PC2", "PC3", "PC4"))))
+# adjust LMCs to be same for every experiment
+#T.teo <- T.teo[,index.teo]                #change input here (exclude for var)
+
 for (i in 1:dim(T.teo)[2]){
   pred.lmc[i,1] <- (T.teo[,i] - pca.teo$center) %*% pca.teo$rotation[,1]
   pred.lmc[i,2] <- (T.teo[,i] - pca.teo$center) %*% pca.teo$rotation[,2]
 }
 ```
 ```{r}
-plot(pca.teo$x[,1:2], xlim =c(-10, 10), ylim = c(-10,10), pch = 16, col = group_type_meth,
-     main = "PCA of LMC projection filtered for Neftel et al.")
-points(pred.lmc[,1:2], col = "red", pch = 16)
-text(pred.lmc, labels = rownames(pred.lmc), pos = 3)
-#text(pred.lmc[,1:2], labels = rownames(pred.lmc[index.random,]), pos = 3) # taken from after heatmaps
+# make colours based on previously known clusters 
+#- Set1 for RNA, Set2 for DNAm
+colours_pca <- c(brewer.pal(nlevels(group_type_rna)-1, 'Dark2'), "black") # change here
+clusters <- as.numeric(factor(group_type_rna,                   # change here
+                              levels = levels(group_type_rna))) # change here
+
+# visualisa
+plot(pca.teo$x[,1:2], xlim = c(min(pred.lmc[,1])-1, max(pred.lmc[,1]+1)), 
+     ylim = c(min(pred.lmc[,2])-1, max(pred.lmc[,2]+2)), pch = 16, col = colours_pca[clusters],
+     main = "PCA of LMC projection filtered for var \n coloured by RNA subtype")
+points(pred.lmc[,1:2], col = "red", pch = 17)
+text(pred.lmc, labels = rownames(pred.lmc), pos = 3) 
+#text(pred.lmc[,1:2], labels = rownames(pred.lmc[index.teo,]), pos = 3) # taken from after heatmaps -- not needed anymore
 # add legend
+legend("topleft", col=colours_pca, legend = levels(group_type_rna), #change here
+       pch = 20, pt.cex = 1.5, bty='n', cex=1)
 ```
 ```{r}
 # have a look at PC 3 and 4 to see the 4th LMC better
@@ -355,23 +383,29 @@ for (i in 1:dim(T.teo)[2]){
 # plot multiple PCA spaces
 idx <- subset(expand.grid(x=1:4,y=1:4),x!=y)
 i <-1
+par(xpd = TRUE)
 pairs(pca.teo$x[,1:4], pch=16, xlim = c(min(pred.lmc-1), max(pred.lmc+1)), 
       ylim = c(min(pred.lmc-1), max(pred.lmc+1)), 
             panel=function(x, y, ...) {
-                points(x, y, pch=16, cex = 1.5, col = group_type_meth)
+                points(x, y, pch=16, cex = 1.5, col = colours_pca[clusters]) 
                 points(pred.lmc[,idx[i,"y"]],pred.lmc[,idx[i,"x"]],
                              cex=1.7,pch=16,col='red')
                 text(pred.lmc[,idx[i,"y"]],pred.lmc[,idx[i,"x"]], 
-                     #labels = rownames(pred.lmc[index.random,]), pos = 3)
-                     labels = rownames(pred.lmc), pos = 3)
+                     #labels = rownames(pred.lmc[index.teo,]), pos = 3) #change here -- not use
+                     labels = rownames(pred.lmc), pos = 3) # only always now
                 i <<- i +1},
-      main = "PCA of LMC projection filtered for Neftel et al."
+      main = "PCA of LMC projection filtered for var \n coloured by RNA subtype"
             )
+# add legend
+legend("topleft", col=colours_pca, legend = levels(group_type_rna),  # change here
+       pch = 20, pt.cex = 1.5, ncol = 1, text.width = 0.15, cex = 0.8)
+       #, x.intersp = 0.5, bty = "n")
+
 ```
 
 
 
-## Visualise and compare LMC proportions between different FS selections
+### Visualise and compare LMC proportions between different FS selections
 
 To compare NMF results for different FS prior to it, we visualise the resulting LMC proportions per subject in the form of barplots. Since in the outcome, LMCs are not consistently labelled throughout all different results, we also compare the euclidean distance among different proportion profiles to find matching ones.
 
@@ -485,12 +519,15 @@ rownames(ref.random_probes) <- c("random_P LMC1", "random_P LMC2", "random_P LMC
 # make one distance matrix of all
 dist.all <- as.matrix(dist(rbind(ref.teo, ref.var, ref.wang, ref.neftel, ref.random_probes, 
                                  ref.wero, ref.random), method = "euclidean"))
+corr.all <- cor(dist.all)
 ```
 ```{r}
 # visualise
 #heatmap(dist.all, main = "Euclidean Distance between all LMC proportions")
-heatmap.2(dist.all, main = "Similarity of LMC proportions", 
+heatmap.2(dist.all, main = "Euclidean distance of LMC proportions", 
           trace = "none", density.info = "none", margins =c(8,8))
+heatmap.2(corr.all, main = "Correlation of LMC proportions", 
+           trace = "none", density.info = "none", margins =c(8,8))
 ```
 
 Using the corresponding LMCs across different FS results, we reorganise the barplots to better compare proportions between the results, trying to match up most similar LMC proportions for all.
@@ -589,10 +626,13 @@ ref.black_teo1 <- ref.black_teo[index.black_teo,]
 rownames(ref.black_teo1) <- c("teo LMC1", "teo LMC2", "teo LMC3", 
                              "teo LMC4")
 dist.black1 <- as.matrix(dist(rbind(ref.black_var, ref.black_teo1), method = "euclidean"))
+cor.black1 <- cor(dist.black1)
 
 # Heatmap of distance between both black runs
 par(cex.main=.8)
-heatmap.2(dist.black1, main = "Black sample group: similarity of LMC proportions", 
+heatmap.2(dist.black1, main = "Black sample group: euclidean distance of LMC proportions", 
+          trace = "none", density.info = "none", margins = c(9,9))
+heatmap.2(cor.black1, main = "Black sample group: correlation of LMC proportions", 
           trace = "none", density.info = "none", margins = c(9,9))
 ```
 ```{r}
@@ -623,12 +663,15 @@ colnames(T.black_teo_m) <- c("LMC1 Black", "LMC2 Black", "LMC3 Black", "LMC4 Bla
 # correlate both LMC profile
 dist.cau_bl <- as.matrix(dist(rbind(t(T.teo_m),(t(T.black_teo_m))), method = "euclidean"))
 par(cex.main=.8)
-heatmap.2(dist.cau_bl, main = "Caucasion vs Black: LMC profile similarity for teo", 
+heatmap.2(dist.cau_bl, main = "Caucasion vs Black: LMC profile distance for teo", 
+         trace = "none", density.info = "none", col = redblue(20), margins = c(8,8))
+cor.cau_bl <- cor(dist.cau_bl)
+heatmap.2(cor.cau_bl, main = "Caucasion vs Black: LMC profile correlation for teo", 
          trace = "none", density.info = "none", col = redblue(20), margins = c(8,8))
 ```
 
 
-## Analysing similarities in Feature Selection prior to NNMF
+### Analysing similarities in Feature Selection prior to NNMF
 
 To investigate how similar the criteria applied for feature selection have been, we check for common genes within the lists as well as functional similarities by means of KEGG enrichment clustering.
 
@@ -689,7 +732,7 @@ print(overlap$a5)
 ```
 
 
-# KEGG enrichment analysis of gene lists
+### KEGG enrichment analysis of gene lists
 
 To investigate a possible functional overlap in the gene lists applied during feature selection prior to NMF, we investigate pathway enrichment using the KEGG data base in the next step.
 
@@ -710,15 +753,16 @@ for (i in 1:size(all_gene_lists)[2]){
 names(genes_entrez) <- names(all_gene_lists)
 
 # compare cluster with KEGG pathway database
-ck <- compareCluster(geneCluster = genes_entrez, fun = enrichKEGG)#, pvalueCutoff = 0.25)
+ck <- compareCluster(geneCluster = genes_entrez, fun = enrichKEGG, organism="hsa")#, pvalueCutoff = 0.25)
 ck <- setReadable(ck, OrgDb = org.Hs.eg.db, keyType="ENTREZID")
 head(ck)
 ```
-# Visualisation of cluster results
+
+### Visualisation of cluster results
 
 ```{r}
 # plot significant pathways as dotplot
-dotplot(ck)
+dotplot(ck, title = "Gene set enrichment analysis for KEGG pathways", font.size = 9)#, size = "count", color = "qvalue", includeAll = T)
 ```
 ```{r}
 # plot pathways and related gene overlap as cluster net plot
@@ -729,14 +773,14 @@ To better understand functional overlap outside of only the significant pathways
 
 ```{r}
 # make new clusters with higher p value cutoff, as to show non-significant pathways in heatmap as well
-ck1 <- compareCluster(geneCluster = genes_entrez, fun = enrichKEGG, pvalueCutoff = 1)
+ck1 <- compareCluster(geneCluster = genes_entrez, fun = enrichKEGG, pvalueCutoff = 0.25)
 ck1 <- setReadable(ck1, OrgDb = org.Hs.eg.db, keyType="ENTREZID")
 
 #Take out relevant data
 cluster_data <- data.frame(ck1@compareClusterResult$Cluster, 
                            ck1@compareClusterResult$Description, 
-                           ck1@compareClusterResult$qvalue)
-colnames(cluster_data) <- c("genelist", "path", "qval")
+                           ck1@compareClusterResult$p.adjust)
+colnames(cluster_data) <- c("genelist", "path", "p.adjust")
 
 # make loop to get top 5 unique pathways for each FS list
 pathways <- c()
@@ -771,28 +815,28 @@ for (x in unique(cluster_data$genelist)){
   subset_FS <- cluster_data[which(cluster_data$genelist == x),]
   in_df <- which(subset_FS$path %in% pathways)
   in_paths <- which(pathways %in% subset_FS$path)
-  cluster_heat[in_paths, x] <- subset_FS[in_df, "qval"]
+  cluster_heat[in_paths, x] <- subset_FS[in_df, "p.adjust"]
 }
 ```
 ```{r}
 # make data -log10
-cluster_heat_log <- as.matrix(-log10(cluster_heat))
+#cluster_heat_log <- as.matrix(-log10(cluster_heat))
 #plot heatmap
-superheat(cluster_heat_log, scale = F, heat.pal = c("blue", "white", "red")) 
+superheat(cluster_heat, scale = F, heat.pal = c("blue", "white", "red")) 
           #order.rows = order(cluster_heat$teo))
           #heat.col.scheme = "red")#heat.na.col = "white",
 ```
 
 
-# Estimate Cell counts using Watermelon method
+### Estimate Cell counts using Watermelon method
 
 ```{r}
 # load renomred methylumi object from files
 setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
 mset_renorm <- readRDS(file = "MSet_renorm.RDS")
 
-medecom.result.neftel <- readRDS("Medecom_result_neftel.RDS")
-beta_mat.neftel <- as.matrix(read.table(file = "beta_preprocessed_neftel.txt"))
+#medecom.result.neftel <- readRDS("Medecom_result_neftel.RDS")
+#beta_mat.neftel <- as.matrix(read.table(file = "beta_preprocessed_neftel.txt"))
 ```
 ```{r}
 # run Housseman's cellcount estimate algorithm
@@ -800,13 +844,52 @@ ecc <- estimateCellCounts.wmln(mset_renorm, referencePlatform = "IlluminaHumanMe
                                compositeCellType = "DLPFC", cellTypes = c("NeuN_neg", "NeuN_pos"),
                                returnAll = T)
 ```
-Here, I am trying to match up my LMC proportions to the Neuron-negative cell proportions of the Houseman function from above. To do this, I am running a matrix multiplication of all 4 LMC proportions with a binary matrix of all possible recombinations. 
-To compare this between different feature selections, I'd need to first match up the LMCs (see above), so for now I am doing just Teo. 
-However, the Neuron-positive proportion part is, depending on the sample, extremely small. So it is hard to find a definitve answer. I will try to do a similar analysis with a combination of percentages and profiles.
+
+For the next part, we are trying to correlate the profile and proportions of the Neur NEg and Pos to our LMC data.
+
+First up, trying to find one LMC that most closely correspond to NeuPos (because easier)
+
+```{r}
+# extract LMC proportions and profile for teo
+prop_lmc <- getProportions(medecom.result.teo, K=4, lambda=0.01) # change here
+prop_lmc <- prop_lmc[index.teo,]                                 # change here
+
+output <- medecom.result.teo@outputs    # change here
+output <- output$'1'
+all_prfs_lmc <- output$'T'
+prf_lmc <- all_prfs_lmc[[39]]
+prf_lmc <- prf_lmc[,index.teo]          # change here
+
+rownames(prop_lmc) <- c("LMC1", "LMC2","LMC3","LMC4")
+colnames(prf_lmc) <- c("LMC1", "LMC2","LMC3","LMC4")
+
+#extract proportions and profile for Neurpos  
+prop_Npos <- ecc$counts[,2]
+
+probe_idx <- which(rownames(ecc$compTable) %in% rownames(beta_mat.teo)) #change here
+prf_Npos <- ecc$compTable[probe_idx, "NeuN_pos"]
+
+# correlate proportions
+f2 <- function(x, y) dist(rbind(x,y))
+prf_dist_Npos <- sapply(as.list(as.data.frame(prf_lmc)), FUN = f2, y = prf_Npos)
+prop_dist_Npos <- sapply(as.list(as.data.frame(t(prop_lmc))), FUN = f2, y = prop_Npos)
+
+plot(prf_dist_Npos)
+plot(prop_dist_Npos)
+```
+
+
+Here, I am trying to match up my LMC proportions to the Neuron-negative cell proportions of the Houseman function from above. To do this, I am running a matrix multiplication of all 4 LMC proportions with a binary matrix of all possible combinations. 
+To compare this between different feature selections, I'd need to first match up the LMCs (see above), so for now I am doing just one. 
+However, the Neuron-positive proportion part is, depending on the sample, extremely small. So it is hard to find a definitive answer. I will try to do a similar analysis with a combination of percentages and profiles.
 
 ```{r}
 # find most likely combination of LMC profile percentages adding up to ecc percentages
-prop_lmc <- getProportions(medecom.result.neftel, K=4, lambda=0.01)
+# get proportions
+prop_lmc <- getProportions(medecom.result.teo, K=4, lambda=0.01) #change here
+prop_lmc <- prop_lmc[index.teo,]                                 # change here
+rownames(prop_lmc) <- c("LMC1", "LMC2","LMC3","LMC4")
+
 prop_Nneg <- ecc$counts[,1]
 
 # create binary matrix with all possible combinations of LMC percentages
@@ -814,37 +897,51 @@ m_comb <- as.data.frame(expand.grid(lapply(1:4, function(x) c(0, 1))))
 
 # make loop to find best recombination per sample
 m_prop <- as.data.frame(matrix(, nrow = dim(m_comb[2]), ncol = length(prop_Nneg)))
-m_err <- as.data.frame(matrix(, nrow = dim(m_comb[2]), ncol = length(prop_Nneg)))
-err_min <- vector(mode="numeric", length=length(prop_Nneg))
+m_err_prop <- as.data.frame(matrix(, nrow = dim(m_comb[2]), ncol = length(prop_Nneg)))
+err_min_prop <- vector(mode="numeric", length=length(prop_Nneg))
 
 for (i in 1:length(prop_Nneg)){
+  # add proportions in combination according to the combination matrix
   m_prop[,i] <- as.matrix(m_comb) %*% as.matrix(prop_lmc[,i])
-  m_err[,i] <- prop_Nneg[i] - m_prop[,i]
-  err_min[i] <- which(abs(m_err[,i]) == min(abs(m_err[,i])))
+  # get error to the Neuronegative proportion
+  m_err_prop[,i] <- prop_Nneg[i] - m_prop[,i]
+  
+  # find which combination gives least error for this sample
+  err_min_prop[i] <- which(abs(m_err_prop[,i]) == min(abs(m_err_prop[,i])))
 }
 
-hist(err_min)
+# calculate differences as distance measure
+f2 <- function(x, y) dist(rbind(x,y))
+m_err_prop2 <- sapply(as.list(as.data.frame(t(m_prop))), FUN = f2, y = prop_Nneg)
+plot(m_err_prop2)
+
+# display the combination with lowest error for all samples
+hist(err_min_prop, main = "Lowest error for LMC proportion combination in regard to NeurNeg proportions \n for teo", 
+     xlab = "proportion combination No.")
+plot(rowSums(abs(m_err_prop)))
 ```
 
 
 ```{r}
 # trying the above with a recombination of percentages and profiles
 # matching profile probes
-probe_idx <- which(rownames(ecc$compTable) %in% rownames(beta_mat.neftel))
-prf_ecc <- ecc$compTable[probe_idx, "NeuN_neg"]
+probe_idx <- which(rownames(ecc$compTable) %in% rownames(beta_mat.teo)) #change here
+prf_Nneg <- ecc$compTable[probe_idx, "NeuN_neg"]
 
 # extracting LMC profiles
-output <- medecom.result.neftel@outputs    
+output <- medecom.result.teo@outputs    # change here
 output <- output$'1'
 all_prfs_lmc <- output$'T'
 prf_lmc <- all_prfs_lmc[[39]]
+
+prf_lmc <- prf_lmc[,index.teo]          # change here
+colnames(prf_lmc) <- c("LMC1", "LMC2","LMC3","LMC4")
 
 # Redo the combination analysis
 # create binary matrix with all possible combinations of LMC percentages
 m_comb <- as.matrix(expand.grid(lapply(1:4, function(x) c(0, 1))))
 
 # make loop to find best recombination per sample
-### doesnt make sense this way --- need to figure out
 m_prf_all<- vector(mode="list", length=dim(prop_lmc)[2])
 m_prf <- as.data.frame(matrix(, ncol = dim(m_comb)[1], nrow = dim(prf_lmc)[1]))
 m_err_prf <- as.data.frame(matrix(, ncol = dim(m_comb)[1], nrow = dim(prop_lmc)[2]))
@@ -857,32 +954,38 @@ for (i in 1:dim(prop_lmc)[2]){
   m_prf_all[i] <- list(m_prf)
   
   # next, calculate the distance of each of these recombinations with the ECC profile * proportion
-  ecc_prf_prop <- prf_ecc * prop_Nneg[i]
+  Nneg_prf_prop <- prf_Nneg * prop_Nneg[i]
   #m_err_prf[i,] <- dist(rbind(m_prf, ecc_prf_prop))
   f2 <- function(x, y) dist(rbind(x,y))
-  m_err_prf[i,] <- sapply(as.list(as.data.frame(m_prf)), FUN = f2, y = ecc_prf_prop)
+  m_err_prf[i,] <- sapply(as.list(as.data.frame(m_prf)), FUN = f2, y = Nneg_prf_prop)
   
-  
-  # find minimal distance across all combinations
+    # find minimal distance across all combinations
   err_min_prf[i] <- which(abs(m_err_prf[i,]) == min(abs(m_err_prf[i,])))
 }
 
-hist(err_min_prf)
-heatmap.2(as.matrix(m_err_prf))
+hist(err_min_prf, xlab ="combination no.", main = "minimal error for LMC profile combination with proportions \n in relation to NeurNeg profile with proportion for teo")
+
+heatmap.2(as.matrix(t(m_err_prf)), trace = "none", density.info = "none", 
+          main = "distance between combination of LMC profiles and NeurNeg profiles
+          \n combined with proportion per sample", xlab = "samples", ylab = "combination no.")
+plot(colSums(m_err_prf)/94) # lowest error across all samples
 ```
 
 ```{r}
 # one last comparison of just the profile recombination
-prf_comb <- prf_lmc %*% t(m_comb)
+divider <- rowSums(m_comb)
+divider[1] <- 1
+prf_comb <- (prf_lmc %*% t(m_comb)) %/% divider
 
 f2 <- function(x, y) dist(rbind(x,y))
-prf_comb_dist <- sapply(as.list(as.data.frame(prf_comb)), FUN = f2, y = prf_ecc)
+prf_comb_dist <- sapply(as.list(as.data.frame(prf_comb)), FUN = f2, y = prf_Nneg)
 
-plot(prf_comb_dist)
+plot(prf_comb_dist, main ="distance between LMC profile combinations and NeurNeg profile",
+     xlab = "combination no.", ylab = "euclidean distance")
 ```
 
 
-# Trying hierarchical clustering with the LMC proportions
+### Trying hierarchical clustering with the LMC proportions
 
 I want to try and match the previously established groups for the methylation data to a cluster analysis of the proportions; maybe there are some groups that share similar LMC proportions.
 
@@ -894,37 +997,43 @@ clinical <- readRDS(file = "clinical.RDS")
 new_IDs <- str_replace_all(rownames(clinical), '-', '.')
 rownames(clinical) <- new_IDs
 # find corresponding patients
-sample_IDs <- which(rownames(clinical) %in% colnames(beta_mat.teo)) # change unput here
-# extract relevant group info
-group_type <- clinical$paper_Original.Subtype[sample_IDs]
-group_type <- droplevels(group_type)
+sample_IDs <- match(colnames(beta_mat.var), rownames(clinical))
+  #which(rownames(clinical) %in% colnames(beta_mat.teo)) # change unput here
+clinical_matched <- clinical[sample_IDs,]
 
-group_type_meth <- clinical$paper_Pan.Glioma.DNA.Methylation.Cluster[sample_IDs]
+# extract relevant group info
+group_type_rna <- clinical_matched$paper_Transcriptome.Subtype
+group_type_rna <- droplevels(group_type_rna)
+
+group_type_meth <- clinical_matched$paper_Pan.Glioma.DNA.Methylation.Cluster
 group_type_meth <- droplevels(group_type_meth)
 
 # add level to represent saptients without group
 levels(group_type_meth) <- c(levels(group_type_meth),"none")
 group_type_meth[is.na(group_type_meth)] <- "none"
 
-levels(group_type) <- c(levels(group_type),"none")
-group_type[is.na(group_type)] <- "none"
-
-# get data proportions
-prop.data <- getProportions(medecom.result.teo, # change input here
-                            K=4, lambda=0.01) 
-#colnames(prop.data) <- colnames(beta_mat.teo)
-colnames(prop.data) <- colnames(prop.data, do.NULL = F, prefix = "V_")
+levels(group_type_rna) <- c(levels(group_type_rna),"none")
+group_type_rna[is.na(group_type_rna)] <- "none"
 ```
 
 
 ```{r}
+# get data proportions
+prop.data <- getProportions(medecom.result.var, # change input here
+                            K=4, lambda=0.01) 
+#prop.data <- prop.data[index.neftel,]              # change here or comment out for var
+rownames(prop.data) <- c("LMC1", "LMC2", "LMC3", "LMC4")
+#colnames(prop.data) <- colnames(beta_mat.teo)
+colnames(prop.data) <- colnames(prop.data, do.NULL = F, prefix = "sample_")
+
 # cluster euclidean distance hierarchically for proportions
-hc <- hclust(dist(t(prop.data)))
+hc <- hclust(dist(t(prop.data))) 
 dend <- as.dendrogram(hc)
 
-# make colours based on previously known clusters
-colours_dend <- c(brewer.pal(nlevels(group_type_meth)-1, 'Set1'), "black") # change here
-clusters <- as.numeric(factor(group_type_meth, levels = levels(group_type_meth))) # change here
+# make colours based on previously known clusters -- Set1 RNA, --Set2, DNAm
+colours_dend <- c(brewer.pal(nlevels(group_type_rna)-1, 'Set1'), "black") # change here
+clusters <- as.numeric(factor(group_type_rna,                   # change here
+                              levels = levels(group_type_rna))) # change here 
 names(clusters) <- names(cutree(hc,4))
 
 # function to get color labels
@@ -949,15 +1058,89 @@ dend <- assign_values_to_leaves_edgePar(dend,
 clusDendro = dendrapply(dend, colLab)
  
 # visualise
-plot(clusDendro, main = "Dendrogram of LMC proportions \n coloured by DNAm groups",
+plot(clusDendro, main = "Dendrogram of LMC proportions for var \n coloured by RNA subtype",
      cex = 0.6, ylab = "height")
 legend("topright", 
-     legend = c(levels(group_type_meth)),  # change input here
+     legend = c(levels(group_type_rna)),  # change input here
      col = c(colours_dend),  
      pch = 20, bty = "n",  pt.cex = 2.5, cex = 1.2, 
      text.col = "black", horiz = FALSE, inset = c(0, 0.1))
 ```
 
+```{r}
+# repeat group clustering with the NeurNeg analysis above
+# make groups for minimal error combination of LMC profiles and proportions to NeurNeg pfr * prop
+groups_Nneg <- factor(err_min_prop) #change here
 
+# cluster samples hierarchically based on LMS proportions
+hc_1 <- hclust(dist(t(prop.data)))
+dend_1 <- as.dendrogram(hc_1)
 
+# make colours based on previously known clusters
+colours_dend_1 <- c(brewer.pal(nlevels(groups_Nneg), 'Paired'))#, "black")
+clusters_1 <- as.numeric(factor(groups_Nneg, levels = levels(groups_Nneg))) 
+names(clusters_1) <- names(cutree(hc_1,4))
+
+# function to get color labels
+colLab <- function(n) {
+    if (is.leaf(n)) {
+        a <- attributes(n)
+        labCol <- colours_dend_1[clusters_1[which(names(clusters_1) == a$label)]]
+        attr(n, "nodePar") <- c(a$nodePar, lab.col = labCol)
+    }
+    n
+}
+
+# make branches fatter
+dend_1 <- assign_values_to_branches_edgePar(dend_1, value = 2, edgePar = "lwd")
+
+# colour branches as well
+dend_1 <- assign_values_to_leaves_edgePar(dend_1, value = colours_dend_1[clusters_1[order.dendrogram(dend_1)]], edgePar = "col")
+
+#combine everything into one dendrogram
+clusDendro_1 = dendrapply(dend_1, colLab)
+ 
+# visualise
+plot(clusDendro_1, 
+     main = "Dendrogram of LMC proportions \n coloured by best LMC combi for NeurNeg proportions", cex = 0.6, ylab = "height", xlab = "samples")
+legend("topright", 
+     legend = c(levels(groups_Nneg)),  
+     col = c(colours_dend_1),# "black"),  
+     pch = 20, bty = "n",  pt.cex = 2.5, cex = 1.2, 
+     text.col = "black", horiz = FALSE, inset = c(0, 0.1))
+```
+
+### Link IDH mutation to "clusters"
+
+Here, I want to match the 6 IDH mutated patients to their highest LMC proportion (hoping it is LMC 4, since we established that as potential NE type)
+
+```{r}
+# find LMC with maximum proportions
+max_lmc_prop <- apply(prop_lmc, 2, which.max) 
+names(max_lmc_prop) <- colnames(beta_mat.teo) # change here
+table(max_lmc_prop)
+
+# match with IDH mutation status
+#setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
+#clinical <- readRDS(file = "clinical.RDS")
+
+#rename sample IDS to match beta matrices
+new_IDs <- str_replace_all(rownames(clinical), '-', '.')
+rownames(clinical) <- new_IDs
+# find corresponding patients
+sample_IDs <- match(colnames(beta_mat.var), rownames(clinical))
+  #which(rownames(clinical) %in% colnames(beta_mat.var)) # change input here
+clinical_matched <- clinical[sample_IDs,]
+IDHmut_IDs <- which(clinical_matched$paper_IDH.status == "Mutant")
+
+# check max LMC for IDHmut patients
+max_lmc_prop[IDHmut_IDs]
+#[which(names(max_lmc_prop) %in% rownames(clinical[IDHmut_IDs,]))]
+```
+
+```{r}
+# match LMC4 max patients with NE subtype
+NE_IDs <- which(clinical_matched$paper_Transcriptome.Subtype == "PN")
+max_lmc_prop[NE_IDs]
+```
 

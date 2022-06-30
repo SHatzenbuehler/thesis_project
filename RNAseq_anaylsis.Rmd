@@ -1,0 +1,247 @@
+---
+title: "RNAseq analysis"
+author: "Sarah Hatzenbuehler"
+date: "6 6 2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# RNAseq analysis for TCGA-GBM
+
+```{r}
+# packages
+suppressMessages(library("TCGAbiolinks"))
+suppressMessages(library(SummarizedExperiment))
+suppressMessages(library(affy))
+suppressMessages(library(NMF))
+#suppressMessages(library(EDec))
+#suppressMessages(library(EnsDb.Hsapiens.v79))
+suppressMessages(library(biomaRt))
+suppressMessages(library(MeDeCom))
+suppressMessages(library(stringr))
+```
+
+## Download the RNAseq data from TCGA
+```{r}
+# set directory
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R/")
+
+# querying the data
+query_rnaseq <- GDCquery(project = "TCGA-GBM",
+                        data.category = "Transcriptome Profiling",
+                        data.type = "Gene Expression Quantification",
+                        workflow.type = "STAR - Counts",
+                        legacy = F)
+# Data download
+#GDCdownload(query_rnaseq, method = "client", files.per.chunk = 10)
+```
+```{r}
+# preparing data to be read in
+setwd("C:/Users/Sarah/Documents") # seems it needed a shorter directory
+GBMRnaseqSE <- GDCprepare(query_rnaseq)
+```
+
+Starting to add information to samples
+ => Add clinical information to samples
+ => Adding TCGA molecular information from marker papers
+ => Information will have prefix 'paper_' 
+gbm subtype information from:doi:10.1016/j.cell.2015.12.028
+Available assays in SummarizedExperiment : 
+  => unstranded
+  => stranded_first
+  => stranded_second
+  => tpm_unstrand
+  => fpkm_unstrand
+  => fpkm_uq_unstrand
+```{r}
+# extracting clinical meta information
+clinical_rnaseq <- as.data.frame(colData(GBMRnaseqSE))
+
+# extracting assay information
+GBMMatrix <- assay(GBMRnaseqSE,"fpkm_unstrand")
+```
+
+## Preprocessing
+
+### Data selection based on samples for DNAm
+
+```{r}
+# load in clinical DNAm
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
+clinical_DNAm <- readRDS(file = "clinical_DNAm_filt.RDS")
+
+# match sample name/ maybe evene aliquot to RNAseq clinical
+patient_IDs <- which(clinical_rnaseq$patient %in% clinical_DNAm$patient)
+sample_IDs <- which(clinical_rnaseq$sample_id %in% clinical_DNAm$sample_id)
+# toss out other samples
+clinical_rnaseq_2 <- clinical_rnaseq[sample_IDs, ]
+GBMMatrix_2 <- GBMMatrix[,sample_IDs]
+```
+
+### Gene Filtering
+
+```{r}
+# remove genes with CPM under 5
+rows_low <- which(rowSums(GBMMatrix_2) > 5)
+GBMMatrix_3 <- GBMMatrix_2[rows_low,]
+```
+
+### Visualisation
+
+```{r}
+# density curve of data
+plotDensity(log2(GBMMatrix_3)+0.5, xlab = "Log2(TPM + 0.5)", #transform data for better view
+            main = "Density of TPM values")
+```
+```{r}
+#hierarchical clustering
+hc <- hclust(dist(t(GBMMatrix_3)))
+plot(hc, hang = -1)
+```
+
+### change gene IDs
+
+```{r}
+# chanhge gene IDs from Ensembl to gene ID
+# cut of version from ensembl identifier
+ens_IDs <- gsub("\\..*","",rownames(GBMMatrix_3))
+
+#load in data base
+mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+
+# matching ids 
+gene_IDs <- getBM(filters = "ensembl_gene_id", 
+                attributes = c("ensembl_gene_id", "entrezgene_id", "hgnc_symbol"),
+                values = ens_IDs, mart = mart)
+```
+```{r}
+# substitute Ids
+probe_IDs <- cbind(rownames(GBMMatrix_3), ens_IDs)
+
+hgnc_IDs <- which(gene_IDs$hgnc_symbol != "")
+final_IDs <- which(probe_IDs[,"ens_IDs"] %in% gene_IDs$ensembl_gene_id[hgnc_IDs])
+
+### doesnt work? we will just take it like this for now
+GBMMatrix_4 <- GBMMatrix_3[final_IDs,]
+rownames(GBMMatrix_4) <- gene_IDs$hgnc_symbol[final_IDs]
+```
+
+### Feature selection
+
+```{r}
+# read in gene lists for filtering
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
+genes_teo2019 <- unlist(read.csv(file = "Teo2019_genelist500.csv", header = F))
+genes_neftel2019 <- unlist(read.csv(file = "Neftel2019_genelist_subtypes.csv", header = F))
+genes_var <- unlist(read.csv(file = "var_genes_unique.csv", header = F))
+```
+```{r}
+#filter for teo
+teo_IDs <- which(rownames(GBMMatrix_4) %in% genes_teo2019)
+GBMMatrix_teo <- GBMMatrix_4[teo_IDs, ]
+
+#filter for neftel
+neftel_IDs <- which(rownames(GBMMatrix_4) %in% genes_neftel2019)
+GBMMatrix_neftel <- GBMMatrix_4[neftel_IDs, ]
+```
+
+# NMF 
+
+# explore LMCs as references using EDec 
+
+```{r}
+# extract LMC profiles
+output <- medecom.result.teo@outputs    # change here
+output <- output$'1'
+all_prfs_lmc <- output$'T'
+prf_lmc <- all_prfs_lmc[[39]]
+
+#run stage 0 EDec on profiles
+lmc_prf_info <- run_edec_stage_0(prf_lmc, c("LMC1", "LMC2", "LMC3", "LMC4"), 0.05, 15)
+
+#### doesnt work
+
+```
+
+
+##without proportions from DNAm data
+
+Usinf the nmf R package, with the Lee and Seung algorithm featuring a least-square error minimisation. Seed is chosen to be random, factorisation rank (k) set at 4 to match DNAm results.
+Since we are starting with a random see, we are choosing multiple run to achieve stable results. The function only keeps the best fit as results, overriding the lesser one with each run (to be more memory efficient).
+
+```{r}
+# run standard NMF
+nmf.res_teo <- nmf(t(GBMMatrix_teo), 4, method = "lee", seed = "random", nrun = 30)
+nmf.res_neftel <- nmf(t(GBMMatrix_neftel), 4, method = "lee", seed = "random", nrun = 30)
+```
+
+```{r}
+# extract data from NMF results
+A.res_teo <- basis(nmf.res_teo) #proportion
+T.res_teo <- NMF::coef(nmf.res_teo) #profile
+
+A.res_neftel <- basis(nmf.res_neftel) 
+T.res_neftel <- NMF::coef(nmf.res_neftel) 
+
+### wtf none of this makes any sense
+```
+
+
+## NMF using known proportions and EDec
+
+```{r}
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
+medecom.result.teo <- readRDS("Medecom_result_teo2.RDS")
+medecom.result.neftel <- readRDS("Medecom_result_neftel.RDS")
+
+beta_mat.teo <- as.matrix(read.table(file = "beta_preprocessed_teo.txt"))
+beta_mat.neftel <- as.matrix(read.table(file = "beta_preprocessed_neftel.txt"))
+```
+
+```{r}
+# get LMC proportions
+prop.teo <- t(getProportions(medecom.result.teo, K=4, lambda=0.01))
+prop.neftel <- t(getProportions(medecom.result.neftel, K=4, lambda=0.01))
+
+rownames(prop.neftel) <- colnames(beta_mat.neftel)
+
+#rename sample IDS to match beta matrices
+new_IDs <- str_replace_all(rownames(clinical_DNAm), '-', '.')
+rownames(clinical_DNAm) <- new_IDs
+
+# match samples
+sample_IDs_DNAm <- which(clinical_DNAm$sample_id %in% clinical_rnaseq_2$sample_id)
+clinical_DNAm_2 <- clinical_DNAm[sample_IDs,]
+
+
+
+### doesnt work because I cant match up samples properly right now
+
+# perform EDec NMF with known proportions
+#edec.result <- EDec::run_edec_stage_2(GBMMatrix_neftel, prop.neftel_2)
+```
+
+
+## Comparison of Neuronal percentage with DNAm data
+
+```{r}
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+mset_renorm <- readRDS(file = "MSet_renorm.RDS")
+cibersort_results_nat <- read.table("cibersort_results_nat.txt")
+cibersort_results_csh <- read.table("cibersort_results_csh.txt")
+clinical_rnaseq_2 <- readRDS(file = "clinical_rnaseq_2.RDS")
+```
+```{r}
+# subset Mset for RNAseq samples
+# run ECC om subset
+
+# add up all percetages of reference cell that are not Neuron for both csh and nat for RNAseq
+# compare per sample with ecc NeurPos/neg results for DNAm
+# maybe correlate? Way to statistically evaluate?
+```
+
+
+

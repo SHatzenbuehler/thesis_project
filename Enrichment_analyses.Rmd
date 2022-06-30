@@ -1,0 +1,80 @@
+---
+title: "GSEA_DNAm"
+author: "Sarah Hatzenbuehler"
+date: "25 2 2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Packages
+```{r}
+library(tidyverse)
+```
+
+### 1) Recreation of Christer's analysis & subsequent gene list filtering
+
+To be able to use the results from previous Master students, we need to pre-filter an established relevant gene list for GBM subtypes and only take the top 50. To get this, we look at log2FoldCahnge (LFC) between subtypes, filtering genes for a threshold of LFC >2 to get the genes lists, and finally only select the top50 genes for each type with the highest absolute LFC
+
+# Load data
+```{r}
+# pathway
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+cell_profiles <- read.csv(file = "V1-3_cellprofiles.csv", header = F)
+# adjust issues with reading in
+cell_profiles <- cell_profiles[2:dim(cell_profiles)[1],]
+colnames(cell_profiles) <- c("gene_ID", "V1", "V2", "V3")
+cell_profiles <- cell_profiles %>% remove_rownames %>% column_to_rownames(var="gene_ID")
+```
+
+# Quick prechecks
+```{r}
+# chekc if values are matched for each column
+cell_profiles[!complete.cases(cell_profiles),]
+```
+
+# Actual calculations
+```{r}
+# create subtraction matrix
+log_expr <- cell_profiles #as.data.frame(log2(cell_profiles))#
+expr_change <- as.data.frame(cbind(log_expr[,1]-log_expr[,2], log_expr[,1]-log_expr[,3], 
+                     log_expr[,2]-log_expr[,1], log_expr[,2]-log_expr[,3],
+                     log_expr[,3]-log_expr[,1], log_expr[,3]-log_expr[,2]))
+colnames(expr_change) <- c("V1_V2", "V1_V3", "V2_V1", "V2_V3", "V3_V1", "V3_V2")
+rownames(expr_change) <- rownames((cell_profiles))
+#expr_change <- log2(expr_change)
+
+# visualise genes above threshold of LFC = 2
+hist(c(expr_change$V1_V2, expr_change$V1_V3), xlab = "log2 Fold Change (V1 vs other two)",
+     main = "LFC for V1")
+abline(v = 2, col = "red")
+abline(v = -2, col = "red")
+
+hist(c(expr_change$V2_V1, expr_change$V2_V3), xlab = "log2 Fold Change (V2 vs other two)",
+     main = "LFC for V2")
+abline(v = 2, col = "red")
+abline(v = -2, col = "red")
+
+hist(c(expr_change$V3_V1, expr_change$V3_V2), xlab = "log2 Fold Change (V3 vs other two)",
+     main = "LFC for V3")
+abline(v = 2, col = "red")
+abline(v = -2, col = "red")
+```
+```{r}
+# Filter for each subtypes genes that have LFC > 2
+V1_index <- which(abs(expr_change$V1_V2) > 2 & abs(expr_change$V1_V3) > 2)
+V2_index <- which(abs(expr_change$V2_V1) > 2 & abs(expr_change$V2_V3) > 2)
+V3_index <- which(abs(expr_change$V3_V1) > 2 & abs(expr_change$V3_V2) > 2)
+
+V1_genes <- expr_change[V1_index, c("V1_V2", "V1_V3")]
+V2_genes <- expr_change[V2_index, c("V2_V1", "V2_V3")]
+V3_genes <- expr_change[V3_index, c("V3_V1", "V3_V2")]
+
+# add rownames aka gene IDs
+rownames(V1_genes) <- rownames(expr_change[V1_index,])  ## How to sort for both subtype maximums??
+```
+
+
+

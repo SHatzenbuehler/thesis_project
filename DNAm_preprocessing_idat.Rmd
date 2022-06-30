@@ -1,0 +1,1158 @@
+---
+title: "DNAm_preprocess_idat"
+author: "Sarah Hatzenbuehler"
+date: "8 10 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Preprocessing Methylation data  TCGA idat files
+
+# Packages
+```{r}
+suppressMessages(library("TCGAbiolinks"))
+#library("SummarizedExperiment")
+suppressMessages(library("IlluminaHumanMethylation450kanno.ilmn12.hg19"))
+suppressMessages(library("minfi"))
+suppressMessages(library(PCAtools))
+suppressMessages(library(dplyr))
+suppressMessages(library(stringr))
+suppressMessages(library(wateRmelon))
+suppressMessages(library(rjson))
+suppressMessages(library(tidyr))
+suppressMessages(library(vulcan))
+suppressMessages(library(FDb.InfiniumMethylation.hg19))
+```
+# Download from TCGA
+
+Using the TCGAbiolinks package, we are querying the data directly from the GDC portal. Since the idat files are only availaale from the legacy archive, this needs to be specified. More information on how to auery projects and data types can be found here:
+https://bioconductor.statistik.tu-dortmund.de/packages/3.5/bioc/vignettes/TCGAbiolinks/inst/doc/tcgaBiolinks.html#gdcquery:_searching_gdc_data_for_download
+
+```{r}
+# set directory
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
+
+# querying the data
+query_idat <- GDCquery(project = "TCGA-GBM",
+                        data.category = "Raw microarray data",
+                        platform = "Illumina Human Methylation 450",
+                        file.type = "idat",  
+                        legacy = T)
+# Data download
+GDCdownload(query_idat, method = "client", files.per.chunk = 10)
+```
+# Matching idat file names to patient IDs
+
+Because the raw methylation data is differently named than the clinical information we have, we're reading in meta data to match patients with their respective data. So far, we have only downloaded the data; to read it in properly, this step needs to be taken first.
+File is available from: 
+https://portal.gdc.cancer.gov/legacy-archive/cart?pagination=%7B%22files%22:%7B%22from%22:20,%22size%22:20,%22sort%22:%22cases.project.project_id:asc%22%7D%7D
+
+```{r}
+# set wd
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
+
+# json metadata from GDC legacy portal
+meta_idat <- fromJSON(file = "metadata_idat_legacy.json")
+```
+
+Creating matrix of meta data with old filenames based on the Sentrix ID of the assay plate, and the ones we want to replace them with, for easier reading in and processing.
+```{r}
+# create matrix with corresponding filename and TCGA barcode
+idat_id <- matrix(, nrow = length(meta_idat), ncol = 2)
+for (i in 1:length(meta_idat)){
+  x <- meta_idat[[i]]
+  idat_id[i,1] <- unlist(x$associated_entities[[1]][1]) 
+  idat_id[i,2] <- x$file_name
+}
+
+#add column with filename appendiy for concatenation of new filename
+idat_id <- cbind(idat_id, gsub("^.*?_","",idat_id[,2]))
+idat_id[,3] <- gsub("^.*?_","",idat_id[,3])
+# create column of new filename
+idat_id <- as.data.frame(idat_id)
+colnames(idat_id) <- c("barcode", "old_filename", "file_end")
+idat_id <- idat_id %>% unite("new_filename", c(barcode,file_end), remove = FALSE)
+```
+
+File renaming
+```{r}
+# rename files
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R/GDCdata/TCGA-GBM/idat")
+for (i in 1:dim(idat_id)[1]){
+  if (file.exists(idat_id[i, "old_filename"])) {
+    file.rename(idat_id[i, "old_filename"], idat_id[i, "new_filename"])
+  } else {
+    cat("The file does not exist")
+  }
+}
+```
+# Reading in renamed idat files
+ To read in the files, we need to provide the file names without the suffix of the probe colour, and only provide unique patient IDs (the are double becuase of green and red probe colours).
+```{r}
+path <- "~/Studium/Master/Systems Biology Maastricht/Thesis/R/GDCdata/TCGA-GBM/idat"
+#list.files(path)
+basenames <- gsub("_Red.idat", "", idat_id$new_filename)
+basenames <- gsub("_Grn.idat", "", basenames)
+targets <- file.path(path, basenames)
+```
+
+Loading data in as RGChannel set; though we will mostly be working with a MethyLumi set (no particular reason other than that is was easier to handle for me).
+```{r}
+# load data into RGset
+rgset <- read.metharray(unique(targets), verbose = TRUE)
+
+# save object for faster loading
+saveRDS(object = rgset, file = "RGset_idat_1.RDS", compress = FALSE)
+```
+
+load clinical data in from previous analysis
+```{r}
+# idat data
+#rgset <- readRDS(file = "RGset_idat_1.RDS")
+
+# clinical data from beta value files
+data.DNAm <- readRDS(file = "DNAm_data.RDS")
+clinical <- data.frame(data.DNAm@colData)
+rm(data.DNAm) 
+gc()
+```
+
+adjusting the pheno data to only include relevant information
+```{r}
+# keep only interesting columns
+keep <- c("barcode", "definition", "sample_type_id", "tissue_or_organ_of_origin", "race", "gender", "ethnicity", "age_at_index", "vital_status")
+pheno_temp <- clinical[, keep]
+pheno_temp <- rename(pheno_temp, sample_site=tissue_or_organ_of_origin, sex = gender, 
+                     age = age_at_index, tissue_definition = definition)
+# reusing sample sheet information extracted from old filenames
+idat_reduced <- idat_id[!duplicated(idat_id[,"barcode"]),]
+sentrix_id <- str_extract(idat_reduced$old_filename, "[:digit:]{1,}(?=_?)")
+sentrix_position <- str_extract(idat_reduced$old_filename, "(?<=_)[:alnum:]{1,}(?=_?)")
+# combine the info
+pheno <- pheno_temp[order(match(pheno_temp[,"barcode"],idat_reduced[,"barcode"])),]
+pheno <- cbind(pheno, sentrix_id, sentrix_position, row.names=NULL)#targets, row.names = NULL)
+#pheno <- rename(pheno, Basename = targets)
+rownames(pheno) <- pheno$barcode
+```
+
+Loading Methylation data in as MethyLumi object --> easier to work with
+```{r}
+# other way to load in data: methylumi (used by Rick & for wateRmelon)
+mset <- methylumIDAT(pdat = pheno, idatPath = "~/Studium/Master/Systems Biology Maastricht/Thesis/R/GDCdata/TCGA-GBM/idat")
+
+# save data
+saveRDS(object = mset, file = "MSet_idat.RDS", compress = FALSE)
+```
+For easy loading from saved RDS file
+```{r}
+# load Methylumi data back in 
+mset <- readRDS(file = "MSet_idat.RDS")
+```
+
+
+### 1) Data Visualisation QC
+
+## 1.1) Check distribution of methylated and unmethylated raw intensities
+identifying grossly atypical (failed) samples - here we dont really have any. But overall median signal strength is higher for the methylated probes, just to be noted.
+```{r}
+# Boxplots of methylated and unmethylated probes
+boxplot(log(methylated(mset)), las=2, cex.axis=0.8, 
+        main = "Methylated log distribution (raw)")
+boxplot(log(unmethylated(mset)), las=2, cex.axis=0.8, 
+        main = "Unmethylated log distribution (raw)")
+```
+
+Looking at median intensities of methylated and unmethylated probes to check their distribution. For blood samples, median intensities under 2000 are to be filtered. However, not sure on the procedure for tissue samples - sample signal range seems to be alright.
+```{r}
+### extract sample intensities 
+## summarise the intensities of each sample with a single value, the median 
+M.median<-apply(methylated(mset), 2, median)
+U.median<-apply(unmethylated(mset), 2, median)
+
+QCmetrics<-cbind(M.median, U.median) ## create a table to store output of QC pipeline
+
+intens.Thres<-2000 ## change this to adjust the threshold at which you filter
+```
+```{r}
+pdf("~/Studium/Master/Systems Biology Maastricht/Thesis/R/QC/Scatterplot_SampleIntensity.pdf",width = 10, height = 10)
+par(mfrow = c(1,2))
+hist(M.median, xlab = "Median M intensity")
+hist(U.median, xlab = "Median U intensity")
+par(mfrow = c(1,1))
+plot(M.median, U.median, pch = 16, xlab = "Median M intensity", ylab = "Median U intensity")
+abline(v = intens.Thres, col = "red")
+abline(h = intens.Thres, col = "red")
+dev.off()
+```
+```{r}
+# Plot for Rmd
+par(mfrow = c(1,2))
+hist(M.median, xlab = "Median M intensity")
+hist(U.median, xlab = "Median U intensity")
+```
+```{r}
+par(mfrow = c(1,1))
+plot(M.median, U.median, pch = 16, xlab = "Median M intensity", ylab = "Median U intensity", 
+     main = "Raw median probe intensity")
+abline(v = intens.Thres, col = "red")
+abline(h = intens.Thres, col = "red")
+```
+To already check for potential (technical) confounder, median signal strength was plotted for each assay plate. 
+
+```{r}
+# plot median intensity per plate to highlight technical variances
+par(mfrow = c(1,2))
+par(mar = c(8, 4, 1, 1))
+nCol<-length(unique(pheno$sentrix_id))
+boxplot(M.median ~ pheno$sentrix_id, ylab = "Median M intensity", xlab = "Plate", 
+        las = 2, col = rainbow(nCol)) 
+boxplot(U.median ~ pheno$sentrix_id, ylab = "Median U intensity", xlab = "Plate", 
+        las = 2, col = rainbow(nCol))
+```
+Especially in the scatterplot a rather clear pattern is visible, some of the patients seem to cluster together based on which plate their samoles ran on. This is to be noted and to be checked later on. As these are raw samples for now this effect may be corrected out without additional steps in the normal procedure of preprocessing.
+
+```{r}
+# Scatter plot coloured by plate
+plot(M.median, U.median, pch = 16, xlab = "Median M intensity", ylab = "Median U intensity", 
+     col = rainbow(nCol)[factor(pheno$sentrix_id)])
+abline(v = intens.Thres, col = "red")
+abline(h = intens.Thres, col = "red") 
+legend("top", legend = levels(factor(pheno$sentrix_id)), col = rainbow(nCol), 
+       pch = 16, ncol=7, cex = 0.5)
+```
+## 1.2) Checking Bisulfite conversion rate
+Apparently, every assay includes fully methylated control probes, which can be used for QC. As they are fully methylated these should have DNA methylation values of ~1. The bisulfite conversion score is essentially the median of these probes, and value < 80% conversion rate is taken as a failure.
+Recommendation is to remove samples with <80% BS conversion, however for older experiments this threshold can be set lower. As this is the case here, a threshold of 70% will be set.
+
+```{r}
+# bisulfite conversion using wateRmelom
+bs<-bscon(mset)
+
+# Saving QC metrics
+QCmetrics<-cbind(QCmetrics, bs)
+```
+```{r}
+# plotting and saving histogram of % of BS conversion 
+pdf("~/Studium/Master/Systems Biology Maastricht/Thesis/R/QC/HistBisulphiteConversion.pdf",width = 10, height = 10)
+hist(bs, xlab = "Median % BS conversion", main = "")
+abline(v = 70, col = "red")
+dev.off()
+```
+```{r}
+# Plot for Rmd
+hist(bs, xlab = "Median % BS conversion", main = "Bisulfite Conversion rate", col = "lightblue")
+abline(v = 70, col = "red", lwd = 3)
+```
+
+# Check for outlier with outlyx (wateRmelon)
+The outlyx function takes any beta matrix (preferably raw) and
+will identify any samples that are inconsistent with the rest of the data, from
+the plot we can observe that any data points that fall into the red squares
+are indeed outlying and should be removed from analysis.
+Outlier identification based on interquartile range (2 iq) as well as PCA (based on PC1 by default). Returns a dataframe of TRUE/FALSE per sample where TRUE is outlying.
+
+```{r}
+outlier_check <- outlyx(mset)
+```
+
+# check raw beta density distribution
+plotting density curve of beta values per patient, also checking already for potential confounders. One seems already for the raw data to be race.
+As this effect seems to be very big already on a pure signal strength level, further analysis will be uniracial caucasian. At the end of the study, findings will be evaluated on their bias towards race & gender.
+```{r}
+# Density plots
+densityPlot(betas(mset), main="Density plot of raw beta values")
+
+# check density plots based on potential confounders
+#densityPlot(beta_mat, sampGroups = pheno$sex, main = "Density plot of raw data") # nothing
+#densityPlot(beta_mat, sampGroups = pheno$sentrix_id, main = "Density plot of raw data") #nothing
+densityPlot(betas(mset), sampGroups = pheno$race, main = "Density plot of raw data", legend = F)
+legend("top", legend = c("black or african american", "not reported", "white"), 
+       text.col = c("dark green", "red", "purple"))
+densityPlot(betas(mset), sampGroups = pheno$sample_site, main = "Density plot of raw data")
+```
+
+# Cross check with already preprocessed beta values provided for same data
+Check AUC to compare with other data since the density curves looked very different. It seems AUC paints a similar picture. 
+```{r}
+# calculate density matrix for each patient
+beta_mat <- betas(mset)
+# need to filter our NA first
+probe.na <- rowSums(is.na(beta_mat))
+table(probe.na == 0)
+# chose those has not NA values in rows
+probe <- probe.na[probe.na == 0]
+beta_mat <- beta_mat[row.names(beta_mat) %in% names(probe), ]
+any(is.na(beta_mat))
+
+# check vale range, should be between 0 and 1 - it is
+range(beta_mat)
+
+#library(vulcan)
+# loop for densities
+met_dens_raw <- vector(mode = "list", length = dim(beta_mat)[2])
+names(met_dens_raw) <- colnames(beta_mat)
+for (i in colnames(beta_mat)){
+  met_dens_raw[[i]] =  density(beta_mat[,i])
+}
+
+# check plot
+plot(NULL, xlim=c(-0.1,1.1), ylim=c(0, 5.5), ylab="density", xlab = "beta")
+for(i in seq_along(met_dens_raw)) {
+     lines(met_dens_raw[[i]]) }
+
+# loop for auc
+met_auc_raw <- matrix(, nrow = dim(beta_mat)[2], ncol = 1)
+rownames(met_auc_raw) <- colnames(beta_mat)
+for (i in colnames(beta_mat)){
+  met_auc_raw[i,] =  densityauc(met_dens_raw[[i]], c(0,1))
+}
+
+# plot
+plot(met_auc_raw, ylim=c(0.5,1), xlab = "patients", ylab="AUC", 
+     main = "Area under density curve for raw data")
+```
+
+# check MDA plots to see data distribution
+Multidimesional scaling, checks the 1000 most variable positions and relates samples. Distance not to be taken absolute. Just to another way to check for confounders at this point, and to overall see data distribution. Pretty clear confounder is sex, as was to be expected.
+Potentially should be normalised first (scaling, compare PCA)
+
+```{r}
+# mds plot from minfi
+mdsPlot(beta_mat, numPositions = 1000, sampGroups = pheno$sex, pch = 16, legendPos = "topright")
+mdsPlot(beta_mat, numPositions = 1000, sampGroups = pheno$race, pch = 16, legendPos = "topright")
+```
+
+# 1.3) Check for genetically identical samples based on SNP probes
+In this step, specific probes in the methylation assay corresponding to common mutation sites (SNPs) and their methylation value are correlated between patients to exclude close family relations (corr <0.09). 
+
+```{r}
+# match order of samples with pheno info
+pheno<-pheno[match(colnames(beta_mat), pheno$barcode),]
+
+# select only SNP probes, staring with rs
+betas.rs<-beta_mat[grep("rs", rownames(beta_mat)),]
+# correlate beta values of SNP probes between samples
+snpCor<-cor(betas.rs) # Pearson as standard (assumption of linearity, parametric)
+names(snpCor)<-pheno$barcode
+# set diagonal of the matrix to NA, as it would be 1 for selfcorrelation 
+#(needed for maxcor, otherwise it'll always find itself)
+diag(snpCor)=NA 
+corMax<-apply(abs(snpCor), 1, max, na.rm = TRUE)
+
+# Histogram of correlation frequency over all samples
+hist(corMax, main = "Max. SNP correlation with all other samples", 
+     xlab = "Maximum correlation (Pearson)")
+```
+For each sample, plot beta values per SNP probe against same value for most correlated probe.
+
+```{r}
+# Check for and identify genetically identical matches
+duplicateSamples<-vector(length = ncol(snpCor))
+#if(max(corMax) > 0.95){
+pdf("~/Studium/Master/Systems Biology Maastricht/Thesis/R/QC/DuplicateSamples.pdf", 
+    width = 15, height = 8)
+par(mfrow = c(2,4))
+for(i in 1:ncol(snpCor)){
+    if(!TRUE%in%(snpCor[,i] == max(snpCor[,i],na.rm = T))){next} # @RRR added if no max is found for some reason
+    duplicateSamples[i]<-paste(names(which(snpCor[,i] == max(snpCor[,i],na.rm = T))), 
+                               sep = "|", collapse = "|")
+    plot(betas.rs[,i], betas.rs[, names(which(snpCor[,i] == max(snpCor[,i],na.rm = T)))], 
+         xlab = paste0(colnames(betas.rs)[i]," Cor:", 
+                  round(max(snpCor[,i],na.rm = T),4)), 
+         ylab = paste0(colnames(betas.rs)[which(snpCor[,i] == max(snpCor[,i],na.rm = T))])
+    )
+}
+dev.off()
+
+# save potential duplicates
+QCmetrics<-cbind(QCmetrics, duplicateSamples)
+```
+To check in a different visual way, next is plotted the highest correlation value of any sample with another in a heatmap. There appear to be two clusters which can not quite be accounted for with any of the likely cofactors, but again is is quite clear that samples are not closely related. (For the one sample where this isn't the case: It is the same patient providing tumour tissue sample as well as healthy tissue, which will be filtered for in the next section)
+
+```{r}
+# Heatmap of correlation values
+gplots::heatmap.2(abs(snpCor), trace = "none", labCol = pheno$barcode, 
+                  colCol = rainbow(length(unique(pheno$race)))[factor(pheno$race)], 
+                  dendrogram = "column", labRow = "", key = T, scale = "none")
+```
+
+
+### 2) Filtering & Data adjustment based on QC assessment so far
+
+
+## 2.1 Basic patient filtering
+Filtering patients with tissue type "normal" and "recurrent tumour", as well as one patient with missing clinical data. Furthermore, this analysis will only include caucasian patients, as the confoundign effect of race was already very visible on the signal strength level and may therefore likely influence downstream analyses heavily.
+
+```{r}
+index <- which(pheno$sample_type_id == "01" & !is.na(pheno$sex))
+mset_11 <- mset[ ,index]
+pheno_11 <- pheno[index, ]
+```
+```{r}
+# filtering out anything but caucasian patients
+index1 <- which(pheno_11$race == "white")# | pheno_11$race == "black or african american") 
+mset_1 <- mset_11[ ,index1]
+pheno_1 <- pheno_11[index1, ]
+
+# summary of general patient data
+table(pheno_1$sex)
+hist(pheno_1$age, main = "patient age distribution", xlab = "age")
+
+# remove not needed data
+rm(mset_11) 
+gc()
+```
+
+
+## 2.2 Filtering based on BS conversion rate 
+As was stated above in the Visualisation part, bisulfite conversion is a simple QC measure for methylation data. QC probes should have a BS conversion rate of 100%; everything below 70% is considered of too low quality here, and samples which are affected by this will be filtered out.
+
+```{r}
+# looking at samples to be removed based on previous QC plots
+QCmetrics11 <- as.data.frame(QCmetrics[index, ])
+QCmetrics1 <- QCmetrics11[index1, ]
+qc_good <- which(QCmetrics1$bs > 70)
+
+mset_2 <- mset_1[ ,qc_good]
+pheno_2 <- pheno_1[qc_good, ]
+QCmetrics2 <- QCmetrics1[qc_good, ]
+
+
+# remove previous variables for storage space
+rm(mset_1, mset, QCmetrics1, QCmetrics11) 
+gc()
+```
+
+# pfilter based on probes detection
+
+The pfilter function filters data sets based on bead count and detection p-values. Samples with low detection rates are removed, as are probe with low detection.
+```{r}
+# run pfilter on data
+mset_2 <- pfilter(mset_2)
+```
+
+# Age prediciton unsing wateRmelons age test agep
+
+To further check the aulity of the data, it is usual to predict the age of the samples based on their methylation rate, and compare this with the actual biological age. This is done using Horvath's coefficients.
+However, since the method is based on normal tissue, and here we are dealing with cancer, the results are expected to differ, since tumour tissues tends to be hypomethylated (and generally not normally methylated, which will throw off the results).
+```{r}
+# predict age
+dnamage <- agep(betas(mset_2))
+
+#store results
+QCmetrics2 <- cbind(QCmetrics2, dnamage)
+
+# plot visually predicted ages
+hist(dnamage[,1], xlab = "DNAmAge", main = "Predicted Age")
+plot(y=dnamage[,1], x=pheno_2$age, ylab = "Predicted", xlab = "Reported",xlim=c(0,100),ylim=c(0,200), main = "Age predicted vs reported")
+```
+
+
+## 2.3 Normalisation
+
+WateRmelon's dasen normalisation takes the different types of probes for 450k illumina assays into account. Type I and II probes have been developed at different time points but are still used in the same assay, causing differences in the intensity measurements for the data signals. the dasen normalisation corrects for this and is the recommended approach.
+```{r}
+# Normalise using dasen from wateRmelon
+mset_norm <- dasen(mset_2)
+
+# save data
+saveRDS(object = mset_norm, file = "MSet_norm.RDS", compress = FALSE)
+```
+```{r}
+# load normalised data back in
+mset_norm <- readRDS(file = "MSet_norm.RDS")
+```
+
+# visualise normalisation
+
+To check how well the normalisation has performed, we visualise the data as box plots, as density curves, and take a look at the area under the curve for each of the density curves.
+```{r}
+# Boxplot
+boxplot(log(methylated(mset_norm)), las=2, cex.axis=0.8, 
+        main = "Methylated log distribution (norm)")
+boxplot(log(unmethylated(mset_norm)), las=2, cex.axis=0.8, 
+        main = "Unmethylated log distribution (norm)")
+
+# Density plot
+densityPlot(betas(mset_norm), main="Density plot of normalised beta values")
+```
+# AUC for density curve
+```{r}
+#library(vulcan)
+
+# matrix of beta values
+beta_mat <- betas(mset_norm)
+
+# create density curve values
+beta_dens <- vector(mode = "list", length = dim(beta_mat)[2])
+names(beta_dens) <- colnames(beta_mat)
+for (i in colnames(beta_mat)){
+  beta_dens[[i]] =  density(beta_mat[,i])
+}
+
+# check plot
+plot(NULL, xlim=c(-0.1,1.1), ylim=c(0, 4), ylab="density", xlab = "beta")
+for(i in seq_along(beta_dens)) {
+     lines(beta_dens[[i]]) }
+
+# loop for auc
+beta_auc <- matrix(, nrow = dim(beta_mat)[2], ncol = 1)
+rownames(beta_auc) <- colnames(beta_mat)
+for (i in colnames(beta_mat)){
+  beta_auc[i,] =  densityauc(beta_dens[[i]], c(0,1))
+}
+
+# plot
+plot(beta_auc, ylim=c(0.5,1), xlab = "patients", ylab="AUC", 
+     main = "Area under density curve for norm data")
+```
+
+
+
+## 2.4 PCA (without confounder filtering)
+
+To visualise potential confounders and biggest sources of variance in the data, we perform principal component analyses.
+First, PCs are calculated and their respective percentage of variance explained is visualised in a Scree plot.
+```{r}
+#library(PCAtools)
+
+# matrix of beta values
+beta_mat <- betas(mset_norm)
+
+# Create PCA project
+project.pca <- prcomp(t(beta_mat))
+#summary(project.pca)
+
+#Determine the proportion of variance of each component
+#Proportion of variance equals (PC stdev^2) / (sum all PCs stdev^2)
+project.pca.proportionvariances <- ((project.pca$sdev^2) / (sum(project.pca$sdev^2)))*100
+
+# Bar plot (or Scree Plot)
+barplot(project.pca.proportionvariances, cex.names=1, xlab=paste("Principal component (PC), 1-", length(project.pca$sdev)), ylab="Proportion of variation (%)", main="Scree plot", ylim=c(0,15))
+```
+Next, the first 10 PCs are plotted against each other to better see potential clusters as well as drastic outliers.
+```{r}
+# Biplots of the first 10 PCs after normalisation
+par(cex=1.0, cex.axis=0.8, cex.main=0.8, xpd = TRUE)
+pairs(project.pca$x[,1:5], main="PCs 1-5", pch=16)
+pairs(project.pca$x[,6:10], main="PCs 6-10", pch=16)
+```
+Next, we colour the biplots by potential confounders.
+PC 4 & 5 seem to represent the variance imposed by sex. The confounding effect of the plate seems to have been corrected for.
+
+```{r}
+# Sex differences PCA
+# define groups to colour for
+group_sex <- NA
+group_sex[pheno_2$sex  == "male"] <- 1
+group_sex[pheno_2$sex  == "female"] <- 2
+
+# Biplots of the first 10 PCs
+par(cex=1.0, cex.axis=0.8, cex.main=0.8, xpd = TRUE)
+pairs(project.pca$x[,1:5], col = c("red", "cornflowerblue")[group_sex], 
+      main="Principal components analysis bi-plot\nPCs 1-5 coloured by sex", pch=16)
+legend("bottomright", fill = c("red", "cornflowerblue"), legend = c("male", "female"))
+pairs(project.pca$x[,6:10], col = c("red", "cornflowerblue")[group_sex], 
+      main="Principal components analysis bi-plot\nPCs 6-10 coloured by sex", pch=16)
+```
+```{r}
+# Plate differences PCA
+# define groups to colour for
+group_sentrix <- NA
+no <- 1
+nCol<-length(unique(pheno$sentrix_id))
+
+for (i in unique(pheno_2$sentrix_id)){
+  group_sentrix[pheno_2$sentrix_id  == i] <- no
+  no <- no +1
+}
+
+# Biplots of the first 10 PCs
+par(cex=1.0, cex.axis=0.8, cex.main=0.8, xpd = T)
+pairs(project.pca$x[,1:5], col = rainbow(nCol)[group_sentrix], 
+      main="Principal components analysis bi-plot\nPCs 1-5 coloured by assay plate", pch=16)
+legend(0.05, 0.02, fill = rainbow(nCol),legend = unique(pheno_2$sentrix_id), 
+       ncol = 5, text.width = 0.15, cex = 0.7, x.intersp = 0.2)
+pairs(project.pca$x[,6:10], col = rainbow(nCol)[group_sentrix], 
+      main="Principal components analysis bi-plot\nPCs 6-10 coloured by Plate", pch=16)
+```
+
+## 2.5 Removal of SNPs & Sex chromosome CpGs
+To correct for the effect of sex on the data, as well as individual differences, in the next step probes encoding for regions on the X or Y chromosome as well as probes covering known SNP regions will be removed. 
+
+# Interlude - getting rgset up to current status
+
+To access the annotation data with minfi, we need to use an RGChannelSet, or somehting else that minfi can deal with. I realised later that I didnt actually need to filter the samples here, as it only takes the probes (which I am matching afterwards anyway), but I have left this part in still.
+
+```{r}
+# load in data
+rgset <- readRDS(file = "RGset_idat_1.RDS")
+
+# Filter based on patient info and NA
+rgset_11 <- rgset[ ,index] # filtering out tissue type and sex == NA
+rgset_1 <- rgset_11[ ,index1] # filtering out anything but caucasians
+rgset_2 <- rgset_1[ ,qc_good] # filtering based on BS  conversion
+
+# remove not needed data
+rm(rgset_11, rgset_1, rgset) 
+gc()
+```
+
+Next step, annotation is imported to first remove all probes on the X and Y chromosome. Then, all probes with known SNPs that have a minor allele frequency of under 5% are removed as well.
+
+```{r}
+# get the 450k annotation data
+ann450k <- minfi::getAnnotation(rgset_2)
+beta_mat <- betas(mset_norm)
+
+# remove probes with NA
+probe.na <- rowSums(is.na(beta_mat))
+table(probe.na == 0)
+probe <- probe.na[probe.na == 0] # chose those has not NA values in rows
+beta_mat_11 <- beta_mat[row.names(beta_mat) %in% names(probe), ]
+
+# remove probes that match to chromosome  X and Y 
+keep <- !(row.names(beta_mat_11) %in% ann450k$Name[ann450k$chr %in% c("chrX","chrY")])
+table(keep)
+beta_mat_1 <- beta_mat_11[keep, ]
+
+# remove SNPs overlapped probe
+table (is.na(ann450k$Probe_rs))
+# probes without snp
+no.snp.probe <- ann450k$Name[is.na(ann450k$Probe_rs)]
+snp.probe <- ann450k[!is.na(ann450k$Probe_rs), ]
+
+# SNPs with maf <= 0.05
+snp5.probe <- snp.probe$Name[snp.probe$Probe_maf <= 0.05]
+# filter both RS probes as well as probes with minor allele frequency of <= 0.05
+beta_mat_2 <- beta_mat_1[row.names(beta_mat_1) %in% c(no.snp.probe, snp5.probe), ]
+
+# Remove SNP probes starting with ch. (Not sre if I should do this?)
+#keep3 <- !str_detect(rownames(beta_mat_2), regex("ch.", dotall = TRUE))
+#beta_mat_3 <- beta_mat_2[keep3, ]
+
+#remove no-further needed datasets
+rm(beta_mat, beta_mat_11, beta_mat_1)
+gc()
+```
+
+
+```{r}
+# Remove CpGs from MethyLumi object to be able to normalise it again
+RemoveCpG = rownames(mset_2)%in%rownames(beta_mat_2)
+mset_3 = mset_2[RemoveCpG,]
+
+rm(mset_2, beta_mat_2, rgset_2)
+gc()
+```
+```{r}
+# save objects for faster reloading
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(QCmetrics2, file = "QCmetrics2.txt", col.names =  T)
+saveRDS(ann450k, file = "ann450k.RDS", compress = F)
+```
+
+## Renormalisation
+
+After probe filtering, renormalise all values
+```{r}
+# Normalise using dasen from wateRmelon
+mset_renorm <- dasen(mset_3)
+
+# save data
+saveRDS(object = mset_renorm, file = "MSet_renorm.RDS", compress = FALSE)
+```
+```{r}
+# load normalised data back in
+mset_renorm <- readRDS(file = "MSet_renorm.RDS")
+QCmetric2 <- read.table("QCmetrics2.txt", row.names = 1)
+ann450k <- readRDS("ann450k.RDS")
+```
+
+
+## 2.7 PCA again 
+
+To check how well removing the X and Y probes helped to unbias the data, another round of PCAs will be performed.
+
+```{r}
+# Create PCA project
+beta_renorm <- betas(mset_renorm)
+project.pca2 <- prcomp(t(beta_renorm))
+project.pca.proportionvariances2 <- ((project.pca2$sdev^2) /
+                                      (sum(project.pca2$sdev^2)))*100
+
+# Bar plot (or Scree Plot)
+barplot(project.pca.proportionvariances2, cex.names=1, 
+        xlab=paste("Principal component (PC), 1-",length(project.pca2$sdev)), 
+        ylab="Proportion of variation (%)", 
+        main="Scree plot after SNP and XY filtering", ylim=c(0,15))
+```
+
+Next, PCs are again visualised against each other and confounders are checked.
+```{r}
+# Sex differences PCA
+# define groups to colour for
+group_sex <- NA
+group_sex[pheno_2$sex  == "male"] <- 1
+group_sex[pheno_2$sex  == "female"] <- 2
+
+# Biplots of the first 10 PCs
+par(cex=1.0, cex.axis=0.8, cex.main=0.8, xpd = TRUE)
+pairs(project.pca2$x[,1:5], col = c("red", "cornflowerblue")[group_sex], 
+      main="Principal components analysis bi-plot\nPCs 1-5 coloured by sex after chr filtering",
+      pch=16)
+legend("bottomright", fill = c("red", "cornflowerblue"), legend = c("male", "female"))
+pairs(project.pca2$x[,6:10], col = c("red", "cornflowerblue")[group_sex], 
+      main="Principal components analysis bi-plot\nPCs 6-10 coloured by sex after chr filtering",
+      pch=16)
+```
+
+Again we also check if the plates are still visible
+```{r}
+# Plate differences PCA
+# define groups to colour for
+group_sentrix <- NA
+no <- 1
+nCol<-length(unique(pheno$sentrix_id))
+
+for (i in unique(pheno_2$sentrix_id)){
+  group_sentrix[pheno_2$sentrix_id  == i] <- no
+  no <- no +1
+}
+
+# Biplots of the first 10 PCs
+par(cex=1.0, cex.axis=0.8, cex.main=0.8, xpd = T)
+pairs(project.pca2$x[,1:5], col = rainbow(nCol)[group_sentrix], 
+      main="Principal components analysis bi-plot\nPCs 1-5 coloured by assay plate after chr filtering",
+      pch=16)
+legend(0.05, 0.02, fill = rainbow(nCol),legend = unique(pheno_2$sentrix_id), 
+       ncol = 5, text.width = 0.15, cex = 0.7, x.intersp = 0.2)
+pairs(project.pca2$x[,6:10], col = rainbow(nCol)[group_sentrix], 
+      main="Principal components analysis bi-plot\nPCs 6-10 coloured by Plate after chr filtering", 
+      pch=16)
+```
+
+## 2.8 CpG filtering based on variance and associated genes
+
+# Prepare lists for filtering based on different criteria
+
+In the next steps, we create sereval criteria for wichi we can do a feature seelction. This includes biologically relevant gene lists, variance, as well as randomly selected genes or probes.
+
+First off, we asscoiate the CpG probes to genes on several lists according to literature or previous experiments.
+
+1) Linking genes to CpG probes for Weronika's Gene lists
+```{r}
+# load in gene lists from Weronicka's project
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
+gene_list_v1 <- read.csv("V1_markers.csv", header = F)
+gene_list_v2 <- read.csv("V2_markers.csv", header = F)
+gene_list_v3 <- read.csv("V3_markers.csv", header = F)
+
+# create matrix of probes names and associated gene symbols from annotation file
+probe_genes <- as.data.frame(cbind(rownames(ann450k), ann450k$UCSC_RefGene_Name))
+colnames(probe_genes)<- c("probeID", "geneID")
+
+# find probes with matching gene coverage
+# for list V1
+pattern_v1 <- paste(";", gene_list_v1$V1, ";", sep="", collapse = "|")
+x <- paste(";", probe_genes$geneID, ";", sep="")
+probesID_v1 <- grep(pattern = pattern_v1, x = x)
+
+# For list V3
+pattern_v3 <- paste(";", gene_list_v3$V1, ";", sep="", collapse = "|")
+probesID_v3 <- grep(pattern = pattern_v3, x = x)
+
+# For list V2 - very long gene list, so need to split it in 8 parts for memory purposes
+pattern_v2_1 <- paste(";", gene_list_v2$V1[1:2000], ";", sep="", collapse = "|")
+probesID_v2_1 <- grep(pattern = pattern_v2_1, x = x)
+
+pattern_v2_2 <- paste(";", gene_list_v2$V1[2001:4000], ";", sep="", collapse = "|")
+probesID_v2_2 <- grep(pattern = pattern_v2_2, x = x)
+
+pattern_v2_3 <- paste(";", gene_list_v2$V1[4001:6000], ";", sep="", collapse = "|")
+probesID_v2_3 <- grep(pattern = pattern_v2_3, x = x)
+
+pattern_v2_4 <- paste(";", gene_list_v2$V1[6001:8000], ";", sep="", collapse = "|")
+probesID_v2_4 <- grep(pattern = pattern_v2_4, x = x)
+
+pattern_v2_5 <- paste(";", gene_list_v2$V1[8001:10000], ";", sep="", collapse = "|")
+probesID_v2_5 <- grep(pattern = pattern_v2_5, x = x)
+
+pattern_v2_6 <- paste(";", gene_list_v2$V1[10001:12000], ";", sep="", collapse = "|")
+probesID_v2_6 <- grep(pattern = pattern_v2_6, x = x)
+
+pattern_v2_7 <- paste(";", gene_list_v2$V1[12001:14000], ";", sep="", collapse = "|")
+probesID_v2_7 <- grep(pattern = pattern_v2_7, x = x)
+
+pattern_v2_8 <- paste(";", gene_list_v2$V1[14001:length(gene_list_v2$V1)], ";", 
+                      sep="", collapse = "|")
+probesID_v2_8 <- grep(pattern = pattern_v2_8, x = x)
+# combine partial lists into one, filtering out double entries and sorting in ascending order
+probesID_v2 <- sort(unique(c(probesID_v2_1, probesID_v2_2, probesID_v2_3, probesID_v2_4,
+                             probesID_v2_5, probesID_v2_6, probesID_v2_7, probesID_v2_8)))
+
+# match probe IDs with probe names and corresponding genes
+probe_genes_v1 <- probe_genes[probesID_v1,]
+probe_genes_v2 <- probe_genes[probesID_v2,]
+probe_genes_v3 <- probe_genes[probesID_v3,]
+
+# save lists
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(probe_genes_v1, "probe_genes_v1.csv", row.names = F, sep = ";")
+write.table(probe_genes_v2, "probe_genes_v2.csv", row.names = F, sep = ";")
+write.table(probe_genes_v3, "probe_genes_v3.csv", row.names = F, sep = ";")
+```
+
+```{r}
+# load lists back in for faster processing
+probe_genes_v1 <- as.data.frame(read.csv("probe_genes_v1.csv", header = T, sep = ";"))
+probe_genes_v2 <- as.data.frame(read.csv("probe_genes_v2.csv", header = T, sep = ";"))
+probe_genes_v3 <- as.data.frame(read.csv("probe_genes_v3.csv", header = T, sep = ";"))
+```
+
+1a) Linking only to top50 of Weronika's gene lists
+```{r}
+# load in gene lists from Weronicka's project
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
+gene_list_wero150 <- read.csv("Weronika_genelist_top50_geneID.csv", header = F)
+
+# create matrix of probes names and associated gene symbols from annotation file
+probe_genes <- as.data.frame(cbind(rownames(ann450k), ann450k$UCSC_RefGene_Name))
+colnames(probe_genes)<- c("probeID", "geneID")
+
+# find probes with matching gene coverage
+pattern_wero150 <- paste(";", gene_list_wero150$V1, ";", sep="", collapse = "|")
+x <- paste(";", probe_genes$geneID, ";", sep="")
+probesID_wero150 <- grep(pattern = pattern_wero150, x = x)
+
+# match probe IDs with probe names and corresponding genes
+probe_genes_wero150 <- probe_genes[probesID_wero150,]
+
+# save lists
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(probe_genes_wero150, "probe_genes_wero150.csv", row.names = F, sep = ";")
+```
+
+2) Linking genes to CpG lists for Teo et al. (2019)
+```{r}
+# Do the same with Top500 classifier gene list from Teo et al. 2019
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
+gene_list_teo <- read.csv("Teo2019_genelist500.csv", header = F)
+
+# create matrix of probes names and associated gene symbols from annotation file
+probe_genes <- as.data.frame(cbind(rownames(ann450k), ann450k$UCSC_RefGene_Name))
+colnames(probe_genes)<- c("probeID", "geneID")
+
+# find probes with matching gene coverage
+pattern_teo <- paste(";", gene_list_teo$V1, ";", sep="", collapse = "|")
+x <- paste(";", probe_genes$geneID, ";", sep="")
+probesID_teo <- grep(pattern = pattern_teo, x = x)
+
+# match probe IDs with probe names and corresponding genes
+probe_genes_teo <- probe_genes[probesID_teo,]
+
+# save lists
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(probe_genes_teo, "probe_genes_teo.csv", row.names = F, sep = ";")
+```
+
+```{r}
+# load in for faster processing
+probe_genes_teo <- as.data.frame(read.csv("probe_genes_teo.csv", header = T, sep = ";"))
+```
+
+3) Linking genes and probes for Neftel et al. (2019)
+```{r}
+# Link Neftel gene list to probes
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
+gene_list_neftel <- read.csv("Neftel2019_genelist_subtypes.csv", header = F)
+
+# create matrix of probes names and associated gene symbols from annotation file
+probe_genes <- as.data.frame(cbind(rownames(ann450k), ann450k$UCSC_RefGene_Name))
+colnames(probe_genes)<- c("probeID", "geneID")
+
+# find probes with matching gene coverage
+pattern_neftel <- paste(";", gene_list_neftel$V1, ";", sep="", collapse = "|")
+x <- paste(";", probe_genes$geneID, ";", sep="")
+probesID_neftel <- grep(pattern = pattern_neftel, x = x)
+
+# match probe IDs with probe names and corresponding genes
+probe_genes_neftel <- probe_genes[probesID_neftel,]
+
+# save lists
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(probe_genes_neftel, "probe_genes_neftel.csv", row.names = F, sep = ";")
+```
+
+```{r}
+# load in for faster processing
+probe_genes_neftel <- as.data.frame(read.csv("probe_genes_neftel.csv", header = T, sep = ";"))
+```
+
+4) Linking genes to probes for Wang et al. 2017
+```{r}
+# Link Neftel gene list to probes
+setwd("~/Studium/Master/Systems Biology Maastricht/Thesis/R")
+gene_list_wang <- read.csv("Wang2017_genelist_subtypes.csv", header = F)
+
+# create matrix of probes names and associated gene symbols from annotation file
+probe_genes <- as.data.frame(cbind(rownames(ann450k), ann450k$UCSC_RefGene_Name))
+colnames(probe_genes)<- c("probeID", "geneID")
+
+# find probes with matching gene coverage
+pattern_wang <- paste(";", gene_list_wang$V1, ";", sep="", collapse = "|")
+x <- paste(";", probe_genes$geneID, ";", sep="")
+probesID_wang <- grep(pattern = pattern_wang, x = x)
+
+# match probe IDs with probe names and corresponding genes
+probe_genes_wang <- probe_genes[probesID_wang,]
+
+# save lists
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(probe_genes_wang, "probe_genes_wang.csv", row.names = F, sep = ";")
+```
+
+```{r}
+# load in for faster processing
+probe_genes_wang <- as.data.frame(read.csv("probe_genes_wang.csv", header = T, sep = ";"))
+```
+
+
+# Prepare data for variance filtering
+
+```{r}
+# variance
+beta_renorm <- betas(mset_renorm)
+var_probes <- as.data.frame(rowVars(beta_renorm))
+rownames(var_probes) <- rownames(beta_renorm)
+colnames(var_probes) <- "variance"
+
+# plotting Variance per probe after renormalisation
+plot(var_probes$variance, xlab = "probes", ylab = "Variance", 
+     main = "Variance after normalisation")
+```
+As an example, we visualise the overlap ov Weronicka's three gene lists with the the data plotted for variance. Can be done for any of the gene-probe lists.
+```{r}
+# combine probes lists from all three gene lists of Weronicka
+rel_probes <- unique(c(probe_genes_v1$probeID, probe_genes_v2$probeID, probe_genes_v3$probeID))
+
+# select only probes referring to relevant genes
+var_probes[, "colour"] <- "black"
+var_probes[probe_genes_v1$probeID, "colour"] <- "red" #for different lists, change filter input 
+
+# plot variance with V1 genes coloured
+plot(var_probes$variance, xlab = "probes", ylab = "Variance", col = var_probes$colour,
+     main = "Variance coloured for relevant genes V1")
+
+# select only probes referring to relevant genes
+var_probes[, "colour"] <- "black"
+var_probes[probe_genes_v2$probeID, "colour"] <- "blue"
+
+# plot variance with V1 genes coloured
+plot(var_probes$variance, xlab = "probes", ylab = "Variance", col = var_probes$colour,
+     main = "Variance coloured for relevant genes V2")
+
+# select only probes referring to relevant genes
+var_probes[, "colour"] <- "black"
+var_probes[probe_genes_v3$probeID, "colour"] <- "green"
+
+# plot variance with V1 genes coloured
+plot(var_probes$variance, xlab = "probes", ylab = "Variance", col = var_probes$colour,
+     main = "Variance coloured for relevant genes V3")
+```
+
+# Actually filter data based on preferred criteria & saving for further analysis
+
+1) Variance filtering (potentially including relevant genes)
+```{r}
+# filtering all probes that have variance over cutoff AND are in either of the gene lists
+filt_index <- which(var_probes >=0.04) 
+
+# determine list of probes to keep for NMF
+#filt_probes <- rownames(var_probes[filt_index,])
+beta_final <- beta_renorm[filt_index, ]
+
+# save beta matrix for further analysis
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(beta_final, "beta_preprocessed_var2.txt", sep="\t",row.names=T)
+```
+
+To compare the selected probes and their associated genes in further analyses, we alsofirst extract them and then save them in this next step.
+```{r}
+# save table with probes & associated genes when filtered for variance
+# associated probes with genes for selected probes
+var_index <- which(ann450k$Name %in% filt_probes)
+var_genes <- as.data.frame(filt_probes)
+var_genes[, "genes"] <- ann450k$UCSC_RefGene_Name[var_index]
+
+# save probes genes association table
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(var_genes, "probe_genes_var.csv", row.names = F, sep = ";")
+```
+```{r}
+# copied only the names of associated genes into single csv file
+# separating gene names and only keeping unique ones
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+list_unedit <- read.csv("var_genes_unedit.csv", header = F)
+list_unique <- unique(list_unedit)
+
+# split gene names after ";", append them all into one big list
+list_detached <- strsplit(x = unlist(list_unique), split = "[;]")
+list_full <- data.frame(matrix(unlist(list_detached), ncol=1, byrow=TRUE))
+# again filter for only unique gene names
+list_unique_final <- unique(list_full)
+
+write.csv(list_unique_final, "var_genes_unique.csv", row.names = F)
+```
+
+1a) Filtering for 200 random genes
+
+Also, save all genes annotated on the 450k platform to randomly select 200 for which to filter on.
+```{r}
+# select all genes annotated for on the 450k platform
+all450k_genes <- ann450k$UCSC_RefGene_Name
+idx_empty <- which(all450k_genes != "")
+all450k_genes_filt <- all450k_genes[idx_empty]
+list450k_unique <- unique(all450k_genes_filt)
+
+# split gene names after ";", append them all into one big list
+list450k_detached <- strsplit(x = unlist(list450k_unique), split = "[;]")
+list450k_full <- data.frame(matrix(unlist(list450k_detached), ncol=1, byrow=TRUE))
+# again filter for only unique gene names
+list450k_unique_final <- unique(list450k_full)
+
+# write table with all genes that are associated with probes in the 450k assay
+write.table(list_unique_final, "450k_genes_unique.txt", row.names = F, quote = F )
+```
+
+```{r}
+# take 200 random genes from list
+rand_idx <- sample(1:dim(list450k_unique_final)[1], 200)
+gene_list_random <- as.data.frame(list450k_unique_final[rand_idx,])
+colnames(gene_list_random) <- "V1"
+
+# create matrix of probes names and associated gene symbols from annotation file
+probe_genes <- as.data.frame(cbind(rownames(ann450k), ann450k$UCSC_RefGene_Name))
+colnames(probe_genes)<- c("probeID", "geneID")
+
+# find probes with matching gene coverage
+pattern_random <- paste(";", gene_list_random$V1, ";", sep="", collapse = "|")
+x <- paste(";", probe_genes$geneID, ";", sep="")
+probesID_random <- grep(pattern = pattern_random, x = x)
+
+# match probe IDs with probe names and corresponding genes
+probe_genes_random <- probe_genes[probesID_random,]
+
+# save lists
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(probe_genes_random, "probe_genes_random.csv", row.names = F, sep = ";")
+write.csv(gene_list_random, "random_gene_list.csv", row.names = F)
+```
+
+```{r}
+# Filter beta matrix for random gene list
+beta_renorm <- betas(mset_renorm)
+filt_index <- which(probe_genes_random$probeID %in% rownames(beta_renorm)) 
+
+# determine list of probes to keep for NMF
+#filt_probes <- rownames(var_probes[filt_index,])
+beta_final_random <- beta_renorm[filt_index, ]
+
+# save beta matrix for further analysis
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(beta_final_random, "beta_preprocessed_random.txt", sep="\t",row.names=T)
+```
+
+1b) Filtering for random probes
+
+To further check for bias, we will also take a subset of 10.000 random probes, regardless of their association to any gene, to see the possibly different results in NNMF
+```{r}
+# create index of 10.000 random probes
+beta_renorm <- betas(mset_renorm)
+rand_idx <- sample(1:dim(beta_renorm)[1], 10000)
+
+# determine list of probes to keep for NMF
+beta_final_random_probes <- beta_renorm[rand_idx, ]
+
+# save beta matrix for further analysis
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(beta_final_random_probes, "beta_preprocessed_random_probes.txt", sep="\t",row.names=T)
+```
+
+
+2) Filtering based on gene list
+
+Here we filter the probes based on one of the biological gene lists and their associated probes as established above. 
+```{r}
+# Alternatively, filter for gene lists
+# change name of gene list as appropriate (_teo, _nefte, _wang, _wero150)
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+probe_genes_teo <- read.csv(file = "probe_genes_teo.csv", header = T, sep = ";")
+beta_renorm <- betas(mset_renorm)
+filt_index <- which(probe_genes_teo$probeID %in% rownames(beta_renorm)) 
+
+# determine list of probes to keep for NMF
+#filt_probes <- rownames(var_probes[filt_index,])
+beta_final <- beta_renorm[filt_index, ]
+
+# save beta matrix for further analysis
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(beta_final, "beta_preprocessed_teo2.txt", sep="\t",row.names=T)
+```
+
+2a) Lowest common denominator
+
+As an experiment, we also wanted to run NMF with the lowest common denominator genes found in all biological gene lists, which were only two genes. We associate them here with probes and filter for these.
+Realistically, this feature selection gives us too little information because of the low number of features selected, but it was still an interesting experiment.
+```{r}
+# Match probes to lowest common denominator of gene lists from literature
+# common genes determined in Decon_DNAm_MeDeCom.Rmd
+gene_list_overlap <- as.data.frame(c("S100A11", "NNMT"))
+colnames(gene_list_overlap) <- "V1"
+
+# create matrix of probes names and associated gene symbols from annotation file
+probe_genes <- as.data.frame(cbind(rownames(ann450k), ann450k$UCSC_RefGene_Name))
+colnames(probe_genes)<- c("probeID", "geneID")
+
+# find probes with matching gene coverage
+pattern_overlap <- paste(";", gene_list_overlap$V1, ";", sep="", collapse = "|")
+x <- paste(";", probe_genes$geneID, ";", sep="")
+probesID_overlap <- grep(pattern = pattern_overlap, x = x)
+
+# match probe IDs with probe names and corresponding genes
+probe_genes_overlap <- probe_genes[probesID_overlap,]
+
+# save lists
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(probe_genes_overlap, "probe_genes_overlap.csv", row.names = F, sep = ";")
+```
+
+```{r}
+# Filter beta matrix for overlap
+beta_renorm <- betas(mset_renorm)
+filt_index <- which(probe_genes_overlap$probeID %in% rownames(beta_renorm)) 
+
+# determine list of probes to keep for NMF
+#filt_probes <- rownames(var_probes[filt_index,])
+beta_final_overlap <- beta_renorm[filt_index, ]
+
+# save beta matrix for further analysis
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(beta_final_overlap, "beta_preprocessed_overlap.txt", sep="\t",row.names=T)
+```
+
+
+##3.0) Saving preprocessed Beta-Matrix for further analysis
+
+After preprocessing the data and applying adequate feature selection, the last open step is finally saving the beta matrix for the NMF experiments.
+```{r}
+# save beta matrix for further analysis
+setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis/R")
+write.table(beta_final, "beta_preprocessed_var.txt", sep="\t",row.names=T)
+```
+
+
+

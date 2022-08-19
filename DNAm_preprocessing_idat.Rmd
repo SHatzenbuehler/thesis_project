@@ -9,9 +9,9 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-### Preprocessing Methylation data  TCGA idat files
+# Preprocessing Methylation data  TCGA idat files
 
-# Packages
+### Packages
 ```{r}
 suppressMessages(library("TCGAbiolinks"))
 #library("SummarizedExperiment")
@@ -26,9 +26,9 @@ suppressMessages(library(tidyr))
 suppressMessages(library(vulcan))
 suppressMessages(library(FDb.InfiniumMethylation.hg19))
 ```
-# Download from TCGA
+## Download from TCGA
 
-Using the TCGAbiolinks package, we are querying the data directly from the GDC portal. Since the idat files are only availaale from the legacy archive, this needs to be specified. More information on how to auery projects and data types can be found here:
+Using the TCGAbiolinks package, we are querying the data directly from the GDC portal. Since the idat files are only available from the legacy archive, this needs to be specified. More information on how to query projects and data types can be found here:
 https://bioconductor.statistik.tu-dortmund.de/packages/3.5/bioc/vignettes/TCGAbiolinks/inst/doc/tcgaBiolinks.html#gdcquery:_searching_gdc_data_for_download
 
 ```{r}
@@ -44,7 +44,7 @@ query_idat <- GDCquery(project = "TCGA-GBM",
 # Data download
 GDCdownload(query_idat, method = "client", files.per.chunk = 10)
 ```
-# Matching idat file names to patient IDs
+### Matching idat file names to patient IDs
 
 Because the raw methylation data is differently named than the clinical information we have, we're reading in meta data to match patients with their respective data. So far, we have only downloaded the data; to read it in properly, this step needs to be taken first.
 File is available from: 
@@ -89,7 +89,7 @@ for (i in 1:dim(idat_id)[1]){
   }
 }
 ```
-# Reading in renamed idat files
+### Reading in renamed idat files
  To read in the files, we need to provide the file names without the suffix of the probe colour, and only provide unique patient IDs (the are double becuase of green and red probe colours).
 ```{r}
 path <- "~/Studium/Master/Systems Biology Maastricht/Thesis/R/GDCdata/TCGA-GBM/idat"
@@ -153,7 +153,7 @@ mset <- readRDS(file = "MSet_idat.RDS")
 ```
 
 
-### 1) Data Visualisation QC
+# 1) Data Visualisation QC
 
 ## 1.1) Check distribution of methylated and unmethylated raw intensities
 identifying grossly atypical (failed) samples - here we dont really have any. But overall median signal strength is higher for the methylated probes, just to be noted.
@@ -194,13 +194,14 @@ hist(M.median, xlab = "Median M intensity")
 hist(U.median, xlab = "Median U intensity")
 ```
 ```{r}
+# plot with cutoff lines
 par(mfrow = c(1,1))
 plot(M.median, U.median, pch = 16, xlab = "Median M intensity", ylab = "Median U intensity", 
      main = "Raw median probe intensity")
 abline(v = intens.Thres, col = "red")
 abline(h = intens.Thres, col = "red")
 ```
-To already check for potential (technical) confounder, median signal strength was plotted for each assay plate. 
+To already check for potential (technical) confounders, median signal strength was plotted for each assay plate. 
 
 ```{r}
 # plot median intensity per plate to highlight technical variances
@@ -212,7 +213,7 @@ boxplot(M.median ~ pheno$sentrix_id, ylab = "Median M intensity", xlab = "Plate"
 boxplot(U.median ~ pheno$sentrix_id, ylab = "Median U intensity", xlab = "Plate", 
         las = 2, col = rainbow(nCol))
 ```
-Especially in the scatterplot a rather clear pattern is visible, some of the patients seem to cluster together based on which plate their samoles ran on. This is to be noted and to be checked later on. As these are raw samples for now this effect may be corrected out without additional steps in the normal procedure of preprocessing.
+Especially in the scatterplot a rather clear pattern is visible, some of the patients seem to cluster together based on which plate their samples ran on. This is to be noted and to be checked later on. As these are raw samples for now this effect may be corrected out without additional steps in the normal procedure of preprocessing.
 
 ```{r}
 # Scatter plot coloured by plate
@@ -247,7 +248,7 @@ hist(bs, xlab = "Median % BS conversion", main = "Bisulfite Conversion rate", co
 abline(v = 70, col = "red", lwd = 3)
 ```
 
-# Check for outlier with outlyx (wateRmelon)
+### Check for outlier with outlyx (wateRmelon)
 The outlyx function takes any beta matrix (preferably raw) and
 will identify any samples that are inconsistent with the rest of the data, from
 the plot we can observe that any data points that fall into the red squares
@@ -258,7 +259,7 @@ Outlier identification based on interquartile range (2 iq) as well as PCA (based
 outlier_check <- outlyx(mset)
 ```
 
-# check raw beta density distribution
+### check raw beta density distribution
 plotting density curve of beta values per patient, also checking already for potential confounders. One seems already for the raw data to be race.
 As this effect seems to be very big already on a pure signal strength level, further analysis will be uniracial caucasian. At the end of the study, findings will be evaluated on their bias towards race & gender.
 ```{r}
@@ -274,7 +275,7 @@ legend("top", legend = c("black or african american", "not reported", "white"),
 densityPlot(betas(mset), sampGroups = pheno$sample_site, main = "Density plot of raw data")
 ```
 
-# Cross check with already preprocessed beta values provided for same data
+### Cross check with already preprocessed beta values provided for same data
 Check AUC to compare with other data since the density curves looked very different. It seems AUC paints a similar picture. 
 ```{r}
 # calculate density matrix for each patient
@@ -290,7 +291,6 @@ any(is.na(beta_mat))
 # check vale range, should be between 0 and 1 - it is
 range(beta_mat)
 
-#library(vulcan)
 # loop for densities
 met_dens_raw <- vector(mode = "list", length = dim(beta_mat)[2])
 names(met_dens_raw) <- colnames(beta_mat)
@@ -315,7 +315,7 @@ plot(met_auc_raw, ylim=c(0.5,1), xlab = "patients", ylab="AUC",
      main = "Area under density curve for raw data")
 ```
 
-# check MDA plots to see data distribution
+### check MDA plots to see data distribution
 Multidimesional scaling, checks the 1000 most variable positions and relates samples. Distance not to be taken absolute. Just to another way to check for confounders at this point, and to overall see data distribution. Pretty clear confounder is sex, as was to be expected.
 Potentially should be normalised first (scaling, compare PCA)
 
@@ -380,11 +380,11 @@ gplots::heatmap.2(abs(snpCor), trace = "none", labCol = pheno$barcode,
 ```
 
 
-### 2) Filtering & Data adjustment based on QC assessment so far
+# 2) Filtering & Data adjustment based on QC assessment so far
 
 
 ## 2.1 Basic patient filtering
-Filtering patients with tissue type "normal" and "recurrent tumour", as well as one patient with missing clinical data. Furthermore, this analysis will only include caucasian patients, as the confoundign effect of race was already very visible on the signal strength level and may therefore likely influence downstream analyses heavily.
+Filtering patients with tissue type "normal" and "recurrent tumour", as well as one patient with missing clinical data. Furthermore, this analysis will only include caucasian patients, as the confounding effect of race was already very visible on the signal strength level and may therefore likely influence downstream analyses heavily.
 
 ```{r}
 index <- which(pheno$sample_type_id == "01" & !is.na(pheno$sex))
@@ -426,7 +426,7 @@ rm(mset_1, mset, QCmetrics1, QCmetrics11)
 gc()
 ```
 
-# pfilter based on probes detection
+### pfilter based on probes detection
 
 The pfilter function filters data sets based on bead count and detection p-values. Samples with low detection rates are removed, as are probe with low detection.
 ```{r}
@@ -434,9 +434,9 @@ The pfilter function filters data sets based on bead count and detection p-value
 mset_2 <- pfilter(mset_2)
 ```
 
-# Age prediciton unsing wateRmelons age test agep
+### Age prediction using wateRmelons age test agep
 
-To further check the aulity of the data, it is usual to predict the age of the samples based on their methylation rate, and compare this with the actual biological age. This is done using Horvath's coefficients.
+To further check the qulity of the data, it is usual to predict the age of the samples based on their methylation rate, and compare this with the actual biological age. This is done using Horvath's coefficients.
 However, since the method is based on normal tissue, and here we are dealing with cancer, the results are expected to differ, since tumour tissues tends to be hypomethylated (and generally not normally methylated, which will throw off the results).
 ```{r}
 # predict age
@@ -466,7 +466,7 @@ saveRDS(object = mset_norm, file = "MSet_norm.RDS", compress = FALSE)
 mset_norm <- readRDS(file = "MSet_norm.RDS")
 ```
 
-# visualise normalisation
+### visualise normalisation
 
 To check how well the normalisation has performed, we visualise the data as box plots, as density curves, and take a look at the area under the curve for each of the density curves.
 ```{r}
@@ -479,7 +479,7 @@ boxplot(log(unmethylated(mset_norm)), las=2, cex.axis=0.8,
 # Density plot
 densityPlot(betas(mset_norm), main="Density plot of normalised beta values")
 ```
-# AUC for density curve
+### AUC for density curve
 ```{r}
 #library(vulcan)
 
@@ -583,7 +583,7 @@ pairs(project.pca$x[,6:10], col = rainbow(nCol)[group_sentrix],
 ## 2.5 Removal of SNPs & Sex chromosome CpGs
 To correct for the effect of sex on the data, as well as individual differences, in the next step probes encoding for regions on the X or Y chromosome as well as probes covering known SNP regions will be removed. 
 
-# Interlude - getting rgset up to current status
+### Interlude - getting rgset up to current status
 
 To access the annotation data with minfi, we need to use an RGChannelSet, or somehting else that minfi can deal with. I realised later that I didnt actually need to filter the samples here, as it only takes the probes (which I am matching afterwards anyway), but I have left this part in still.
 
@@ -737,7 +737,7 @@ pairs(project.pca2$x[,6:10], col = rainbow(nCol)[group_sentrix],
 
 ## 2.8 CpG filtering based on variance and associated genes
 
-# Prepare lists for filtering based on different criteria
+### Prepare lists for filtering based on different criteria
 
 In the next steps, we create sereval criteria for wichi we can do a feature seelction. This includes biologically relevant gene lists, variance, as well as randomly selected genes or probes.
 
@@ -921,7 +921,7 @@ probe_genes_wang <- as.data.frame(read.csv("probe_genes_wang.csv", header = T, s
 ```
 
 
-# Prepare data for variance filtering
+### Prepare data for variance filtering
 
 ```{r}
 # variance
@@ -964,9 +964,9 @@ plot(var_probes$variance, xlab = "probes", ylab = "Variance", col = var_probes$c
      main = "Variance coloured for relevant genes V3")
 ```
 
-# Actually filter data based on preferred criteria & saving for further analysis
+## Actually filter data based on preferred criteria & saving for further analysis
 
-1) Variance filtering (potentially including relevant genes)
+##1) Variance filtering (potentially including relevant genes)
 ```{r}
 # filtering all probes that have variance over cutoff AND are in either of the gene lists
 filt_index <- which(var_probes >=0.04) 
@@ -1008,7 +1008,7 @@ list_unique_final <- unique(list_full)
 write.csv(list_unique_final, "var_genes_unique.csv", row.names = F)
 ```
 
-1a) Filtering for 200 random genes
+###1a) Filtering for 200 random genes
 
 Also, save all genes annotated on the 450k platform to randomly select 200 for which to filter on.
 ```{r}
@@ -1066,7 +1066,7 @@ setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis
 write.table(beta_final_random, "beta_preprocessed_random.txt", sep="\t",row.names=T)
 ```
 
-1b) Filtering for random probes
+### 1b) Filtering for random probes
 
 To further check for bias, we will also take a subset of 10.000 random probes, regardless of their association to any gene, to see the possibly different results in NNMF
 ```{r}
@@ -1083,7 +1083,7 @@ write.table(beta_final_random_probes, "beta_preprocessed_random_probes.txt", sep
 ```
 
 
-2) Filtering based on gene list
+## 2) Filtering based on gene list
 
 Here we filter the probes based on one of the biological gene lists and their associated probes as established above. 
 ```{r}
@@ -1103,7 +1103,7 @@ setwd("C:/Users/Sarah/Documents/Studium/Master/Systems Biology Maastricht/Thesis
 write.table(beta_final, "beta_preprocessed_teo2.txt", sep="\t",row.names=T)
 ```
 
-2a) Lowest common denominator
+### 2a) Lowest common denominator
 
 As an experiment, we also wanted to run NMF with the lowest common denominator genes found in all biological gene lists, which were only two genes. We associate them here with probes and filter for these.
 Realistically, this feature selection gives us too little information because of the low number of features selected, but it was still an interesting experiment.
@@ -1145,7 +1145,7 @@ write.table(beta_final_overlap, "beta_preprocessed_overlap.txt", sep="\t",row.na
 ```
 
 
-##3.0) Saving preprocessed Beta-Matrix for further analysis
+## 3.0) Saving preprocessed Beta-Matrix for further analysis
 
 After preprocessing the data and applying adequate feature selection, the last open step is finally saving the beta matrix for the NMF experiments.
 ```{r}

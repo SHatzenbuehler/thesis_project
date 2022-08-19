@@ -9,10 +9,10 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-# Non-negative Matrix Factorisation based on Lutsik et al. (2016): MeDeCom
+# Non-negative Matrix Factorisation based on Lutsik et al. (2017): MeDeCom
 
 
-#### Packages
+### Packages
 
 ```{r}
 suppressMessages(library(devtools))
@@ -159,8 +159,8 @@ As example we only take the NMF results with FS based on Teo et al. for this.
 
 ```{r}
 # get T matrices from the results
-paras.teo <- medecom.result.black_teo@parameters   #change input here
-output.teo <- medecom.result.black_teo@outputs     #change input here
+paras.teo <- medecom.result.example@parameters   #change input here
+output.teo <- medecom.result.example@outputs     #change input here
 output.teo <- output.teo$'1'
 T.teo <- output.teo$'T'
 
@@ -244,20 +244,20 @@ To better interpret the distribution of the data and the different directions of
 
 ```{r}
 # get T matrices from the results
-paras.teo <- medecom.result.var@parameters  #change input here
-output.teo <- medecom.result.var@outputs    #change input here
+paras.teo <- medecom.result.teo@parameters  #change input here
+output.teo <- medecom.result.teo@outputs    #change input here
 output.teo <- output.teo$'1'
 Tall.teo <- output.teo$'T'
 T.teo <- as.data.frame(Tall.teo[[39]])
 colnames(T.teo) <- c("LMC1", "LMC2", "LMC3", "LMC4")
 
 # make PCA plots to put the LMCs in 
-pca.teo <- prcomp(t(beta_mat.var))         #change input here
+pca.teo <- prcomp(t(beta_mat.teo))         #change input here
 pred.lmc <- data.frame(matrix(ncol=4,nrow=4, 
                               dimnames=list(c("LMC1", "LMC2", "LMC3", "LMC4"),
                                             c("PC1", "PC2", "PC3", "PC4"))))
 #adjust LMCs to be same for exery experiment
-#T.teo <- T.teo[,index.black_teo]                #change input here
+T.teo <- T.teo[,index.teo]                #change input here or disregard for var
 
 # project LMCs into PCA space
 for (i in 1:dim(T.teo)[2]){
@@ -297,11 +297,30 @@ pairs(pca.teo$x[,1:4], pch=16, xlim = c(min(pred.lmc-1), max(pred.lmc+1)),
                      #labels = rownames(pred.lmc[index.var,]), pos = 3)
                      labels = rownames(pred.lmc), pos = 3)
                 i <<- i +1},
-      main = "PCA of LMC projection filtered for var"
+      main = "PCA of LMC projection filtered for teo"
             )
 ```
+### try 3D plots
 
-### Try and  add previously esatblished groups for patients as colours into PCA
+```{r}
+library(rgl)
+
+#plot 3D
+plot3d(pca.teo$x[,1:3], xlim = c(min(pred.lmc[,1])-1, max(pred.lmc[,1]+1)), 
+     ylim = c(min(pred.lmc[,2])-1, max(pred.lmc[,2]+2)), cex = 2,
+     zlim = c(min(pred.lmc[,3])-1, max(pred.lmc[,3]+1)), 
+     #main = "PCA of LMC projection filtered for teo", 
+     pch = 16,  type = "p",
+     xlab = "PC1", ylab = "PC2", zlab = "PC3", decorate = T)
+plot3d(pred.lmc[,1:3], col = "red", pch = 16, add = T)
+#text(pred.lmc, labels = rownames(pred.lmc), pos = 3)
+
+## Doesnt look that great, I'll leave that
+```
+
+
+
+### Try and  add previously established groups for patients as colours into PCA
 
 ```{r}
 # read in clinical data
@@ -332,20 +351,20 @@ group_type_rna[is.na(group_type_rna)] <- "none"
 ```{r}
 # Make PCA
 # get T matrices from the results
-paras.teo <- medecom.result.var@parameters  #change input here
-output.teo <- medecom.result.var@outputs    #change input here
+paras.teo <- medecom.result.teo@parameters  #change input here
+output.teo <- medecom.result.teo@outputs    #change input here
 output.teo <- output.teo$'1'
 Tall.teo <- output.teo$'T'
 T.teo <- as.data.frame(Tall.teo[[39]])
 colnames(T.teo) <- c("LMC1", "LMC2", "LMC3", "LMC4")
 
 # make PCA plots to put the LMCs in 
-pca.teo <- prcomp(t(beta_mat.var))         #change input here
+pca.teo <- prcomp(t(beta_mat.teo))         #change input here
 pred.lmc <- data.frame(matrix(ncol=4,nrow=4, 
                               dimnames=list(c("LMC1", "LMC2", "LMC3", "LMC4"),
                                             c("PC1", "PC2", "PC3", "PC4"))))
 # adjust LMCs to be same for every experiment
-#T.teo <- T.teo[,index.teo]                #change input here (exclude for var)
+T.teo <- T.teo[,index.teo]                #change input here (exclude for var)
 
 for (i in 1:dim(T.teo)[2]){
   pred.lmc[i,1] <- (T.teo[,i] - pca.teo$center) %*% pca.teo$rotation[,1]
@@ -354,15 +373,15 @@ for (i in 1:dim(T.teo)[2]){
 ```
 ```{r}
 # make colours based on previously known clusters 
-#- Set1 for RNA, Set2 for DNAm
-colours_pca <- c(brewer.pal(nlevels(group_type_rna)-1, 'Dark2'), "black") # change here
+#- Set1 for RNA (or Dark2?), Set2 for DNAm
+colours_pca <- c(brewer.pal(nlevels(group_type_rna)-1, 'Set1'), "black") # change here
 clusters <- as.numeric(factor(group_type_rna,                   # change here
                               levels = levels(group_type_rna))) # change here
 
 # visualisa
 plot(pca.teo$x[,1:2], xlim = c(min(pred.lmc[,1])-1, max(pred.lmc[,1]+1)), 
      ylim = c(min(pred.lmc[,2])-1, max(pred.lmc[,2]+2)), pch = 16, col = colours_pca[clusters],
-     main = "PCA of LMC projection filtered for var \n coloured by RNA subtype")
+     main = "PCA of LMC projection filtered for teo \n coloured by RNA subtype")
 points(pred.lmc[,1:2], col = "red", pch = 17)
 text(pred.lmc, labels = rownames(pred.lmc), pos = 3) 
 #text(pred.lmc[,1:2], labels = rownames(pred.lmc[index.teo,]), pos = 3) # taken from after heatmaps -- not needed anymore
@@ -394,7 +413,7 @@ pairs(pca.teo$x[,1:4], pch=16, xlim = c(min(pred.lmc-1), max(pred.lmc+1)),
                      #labels = rownames(pred.lmc[index.teo,]), pos = 3) #change here -- not use
                      labels = rownames(pred.lmc), pos = 3) # only always now
                 i <<- i +1},
-      main = "PCA of LMC projection filtered for var \n coloured by RNA subtype"
+      main = "PCA of LMC projection filtered for teo \n coloured by RNA subtype"
             )
 # add legend
 legend("topleft", col=colours_pca, legend = levels(group_type_rna),  # change here
